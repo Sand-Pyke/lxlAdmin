@@ -24,6 +24,6 @@ fi
 nginx -t
 systemctl enable --now nginx
 systemctl reload nginx
-curl --fail --silent --retry 5 --retry-all-errors --retry-delay 1 http://127.0.0.1:8081/healthz
-curl --fail --silent --retry 5 --retry-all-errors --retry-delay 1 http://127.0.0.1:8081/api/current_user
+curl --fail --silent --retry 5 --retry-connrefused --retry-delay 1 http://127.0.0.1:8081/healthz
+curl --fail --silent --retry 5 --retry-connrefused --retry-delay 1 http://127.0.0.1:8081/api/current_user
 printf '\nRelease: %s\n' "$release"
