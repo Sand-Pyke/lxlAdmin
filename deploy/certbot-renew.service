@@ -1,0 +1,9 @@
+[Unit]
+Description=Renew LXL admin HTTPS certificates
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/certbot/bin/certbot renew --quiet --deploy-hook /opt/lxlleague-admin/reload-nginx.sh
+TimeoutStartSec=600

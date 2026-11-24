@@ -1,0 +1,14 @@
+services:
+  admin:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${ADMIN_PORT:-8081}:80'
+    environment:
+      # Required server-side origin, e.g. https://lxlleague.cn (no trailing slash).
+      BACKEND_ORIGIN: ${BACKEND_ORIGIN:?Set BACKEND_ORIGIN in .env}
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'

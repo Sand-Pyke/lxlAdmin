@@ -1,0 +1,42 @@
+.market-open-card {
+  margin-bottom: 24px;
+}
+.market-open-fields {
+  display: grid;
+  grid-template-columns: 140px minmax(210px, 1.4fr) minmax(210px, 1fr) 180px;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.market-open-fields label,
+.market-date {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+.market-open-fields .ant-select {
+  width: 100%;
+}
+.market-help {
+  color: #738079;
+  font-size: 14px;
+  line-height: 1.8;
+  margin: 16px 0 0;
+}
+.market-date {
+  width: 205px;
+}
+@media (max-width: 1200px) {
+  .market-open-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .market-open-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .market-date {
+    width: 100%;
+    max-width: 290px;
+  }
+}

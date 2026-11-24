@@ -1,0 +1,73 @@
+# An external trusted TLS proxy must overwrite Host, X-Forwarded-Proto, and X-Real-IP.
+# The Compose port binds to loopback so clients cannot bypass that TLS proxy.
+map $http_x_forwarded_proto $admin_scheme {
+    default $scheme;
+    https https;
+    http http;
+}
+map $http_x_real_ip $admin_client_ip {
+    default $http_x_real_ip;
+    "" $remote_addr;
+}
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+    client_max_body_size 250m;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header X-Frame-Options DENY always;
+
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # Keep browser Origin and Sec-Fetch-Site unchanged. The backend continues to
+    # reject foreign origins; forwarded host is the real admin host, not upstream.
+    location ^~ /api/ {
+        proxy_pass ${BACKEND_ORIGIN};
+        proxy_http_version 1.1;
+        proxy_ssl_server_name on;
+        proxy_ssl_verify on;
+        proxy_ssl_verify_depth 4;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto $admin_scheme;
+        proxy_set_header X-Forwarded-For $admin_client_ip;
+        proxy_set_header X-Real-IP $admin_client_ip;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_buffering off;
+        add_header Cache-Control "no-store, private" always;
+        add_header X-Content-Type-Options nosniff always;
+    }
+
+    # API-relative media paths must go upstream; Vite assets use /static/.
+    location ^~ /assets/ {
+        proxy_pass ${BACKEND_ORIGIN};
+        proxy_ssl_server_name on;
+        proxy_ssl_verify on;
+        proxy_ssl_verify_depth 4;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto $admin_scheme;
+        proxy_set_header X-Forwarded-For $admin_client_ip;
+        proxy_set_header X-Real-IP $admin_client_ip;
+    }
+
+    location /static/ {
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    location / {
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-store";
+    }
+}

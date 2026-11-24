@@ -1,0 +1,90 @@
+export type Viewer = {
+  id?: number;
+  permissions?: string[];
+  permissionSource?: 'server' | 'legacy';
+  login: boolean;
+  username: string;
+  is_admin: boolean;
+  is_secondary_admin: boolean;
+  is_core_admin: boolean;
+};
+export type User = {
+  id: number;
+  username: string;
+  isAdmin: boolean;
+  isSecondaryAdmin: boolean;
+  isCoreAdmin: boolean;
+  status: string;
+  pendingRank: string;
+  kookName: string | null;
+  banUntil: string | null;
+  createdAt: string;
+  profile: {
+    gameName: string;
+    rank: string;
+    mainPosition: string;
+    subPosition: string;
+    avatar: string;
+  } | null;
+};
+export type UsersResponse = {
+  users: User[];
+  total: number;
+  pending_total: number;
+  core_admin_total: number;
+  secondary_admin_total: number;
+  admin_total: number;
+};
+export type Match = {
+  id: number;
+  name: string;
+  status: string;
+  bo: string;
+  round: string;
+  date: string | null;
+  player_count: number;
+  team_count: number;
+  createdAt?: string;
+  createdByName?: string;
+};
+export type MatchesResponse = { match_list: Match[]; total: number };
+export type Signup = {
+  sign_id: number;
+  source: 'match' | 'season';
+  event_id: number;
+  event_name: string;
+  user_id: number;
+  username: string;
+  game_name: string;
+  rank: string;
+  main_pos: string;
+  is_waitlisted: boolean;
+  is_captain: boolean;
+};
+export type Season = {
+  id: number;
+  name: string;
+  status: string;
+  start_date: string | null;
+  created_at: string;
+  team_count: number;
+  match_count: number;
+  signup_count: number;
+};
+export type ShopItem = {
+  id: number;
+  code: string;
+  name: string;
+  category: string;
+  description: string;
+  price: number;
+  enabled: boolean;
+  durationDays: number | null;
+  icon: string;
+  stock: number | null;
+  effectType: string;
+  effectJson: string;
+  groupCode: string;
+  eligibleMinUserId: number | null;
+  eligibleMaxUserId: number | null;
+};

@@ -1,0 +1,15 @@
+services:
+  admin:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.prebuilt
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${ADMIN_PORT:-8081}:80'
+    environment:
+      BACKEND_ORIGIN: ${BACKEND_ORIGIN:?Set BACKEND_ORIGIN in .env}
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
