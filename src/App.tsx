@@ -17,6 +17,9 @@ const Markets = lazy(() => import('./pages/Markets'));
 const Recharge = lazy(() => import('./pages/Recharge'));
 const Draft = lazy(() => import('./pages/Draft'));
 const DraftLineup = lazy(() => import('./pages/DraftLineup'));
+const MatchManage = lazy(() => import('./pages/MatchManage'));
+const SeasonManage = lazy(() => import('./pages/SeasonManage'));
+const Sponsors = lazy(() => import('./pages/Sponsors'));
 function Loading() {
   return (
     <div className="loading-page">
@@ -146,13 +149,16 @@ export default function Application() {
                 <Route index element={<Dashboard />} />
                 <Route path="users" element={<Users />} />
                 <Route path="matches" element={<Matches />} />
+                <Route path="matches/:id" element={<MatchManage />} />
                 <Route path="matches/:id/lineup" element={<DraftLineup />} />
                 <Route path="signups" element={<Signups />} />
                 <Route path="seasons" element={<Seasons />} />
+                <Route path="seasons/:id" element={<SeasonManage />} />
                 <Route element={<PermissionGate core />}>
                   <Route path="shop" element={<Shop />} />
                   <Route path="markets" element={<Markets />} />
                   <Route path="recharge" element={<Recharge />} />
+                  <Route path="sponsors" element={<Sponsors />} />
                 </Route>
                 <Route
                   path="*"

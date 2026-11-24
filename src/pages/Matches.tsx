@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { App, Button, Card, Form, Input, Modal, Select, Space, Switch, Table } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -12,10 +12,10 @@ import {
   dateText,
   empty,
   label,
-  PageTitle,
   QueryError,
   Refresh,
   Status,
+  tableScrollY,
 } from '../components/shared';
 
 type MatchForm = {
@@ -26,6 +26,15 @@ type MatchForm = {
   use_fee: boolean;
   captain_position?: string;
 };
+
+function todayBeijing(): string {
+  const now = new Date();
+  const beijing = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 8 * 3600000);
+  const year = beijing.getUTCFullYear();
+  const month = String(beijing.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(beijing.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 export default function Matches() {
   const viewer = useViewer();
   const [search, setSearch] = useSearchParams();
@@ -37,6 +46,11 @@ export default function Matches() {
   const { message } = App.useApp();
   const [form] = Form.useForm<MatchForm>();
   const open = search.get('create') === '1' && can(viewer, 'matches.create');
+  useEffect(() => {
+    if (open) {
+      form.setFieldsValue({ date: todayBeijing() });
+    }
+  }, [open, form]);
   const query = useQuery({
     queryKey: ['matches', { page, pageSize, status, keyword }],
     queryFn: ({ signal }) =>
@@ -49,7 +63,7 @@ export default function Matches() {
     mutationFn: (values: MatchForm) =>
       post('/api/admin/match/create', {
         ...values,
-        date: values.date ? `${values.date}:00+08:00` : null,
+        date: values.date ? `${values.date}T19:30:00+08:00` : null,
       }),
     onSuccess: async (data) => {
       void message.success(data.msg || '赛事已创建');
@@ -64,118 +78,109 @@ export default function Matches() {
   });
   return (
     <>
-      <PageTitle
-        title="常规赛事"
-        description="管理比赛信息、报名状态与赛事排期。"
-        extra={
-          <>
-            <Refresh run={query.refetch} loading={query.isFetching} />
-            <Permit permission="matches.create">
-              <Button
-                type="primary"
-                aria-label="创建常规赛"
-                icon={<PlusOutlined />}
-                onClick={() => setSearch({ create: '1' })}
-              >
-                创建常规赛
-              </Button>
-            </Permit>
-          </>
-        }
-      />
-      <QueryError error={query.error} retry={query.refetch} />
-      <Card className="content-card">
-        <div className="table-toolbar">
-          <Space wrap>
-            <Input.Search
-              aria-label="搜索赛事"
-              placeholder="搜索赛事名称"
-              allowClear
-              onSearch={(value) => {
-                setKeyword(value);
-                setPage(1);
-              }}
-              style={{ width: 280 }}
-            />
-            <Select
-              aria-label="赛事状态"
-              value={status}
-              style={{ width: 150 }}
-              onChange={(value) => {
-                setStatus(value);
-                setPage(1);
-              }}
-              options={[
-                { value: '', label: '全部赛事状态' },
-                ...['CREATED', 'LIVE', 'FINISHED'].map((value) => ({ value, label: label(value) })),
-              ]}
-            />
-          </Space>
-        </div>
-        <Table<Match>
-          rowKey="id"
-          dataSource={query.data?.match_list}
-          loading={query.isPending}
-          locale={{ emptyText: empty }}
-          scroll={{ x: 950 }}
-          pagination={{
-            current: page,
-            pageSize,
-            total: query.data?.total || 0,
-            showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 场赛事`,
-            onChange: (value, size) => {
-              setPage(value);
-              setPageSize(size);
-            },
-          }}
-          columns={[
-            {
-              title: '赛事',
-              dataIndex: 'name',
-              render: (_, row) => (
-                <div className="cell-title">
-                  {row.name}
-                  <small>
-                    #{row.id} · {row.round}
-                  </small>
-                </div>
-              ),
-            },
-            { title: '状态', dataIndex: 'status', render: (value) => <Status value={value} /> },
-            { title: '赛制', dataIndex: 'bo' },
-            {
-              title: '选手 / 队伍',
-              render: (_, row) => `${row.player_count} 人 / ${row.team_count} 队`,
-            },
-            { title: '排期时间', dataIndex: 'date', render: dateText },
-            { title: '创建人', dataIndex: 'createdByName', render: (value) => value || '—' },
-            {
-              title: '选人 / 对阵',
-              width: 170,
-              render: (_, row) => (
-                <Space orientation="vertical">
-                  {row.status === 'CREATED' &&
-                    can(viewer, 'draft.view') &&
-                    can(viewer, 'draft.control') && <Link to={`/draft/${row.id}`}>大屏选人</Link>}
-                  {can(viewer, 'draft.view') && (
-                    <Link to={`/matches/${row.id}/lineup`}>查看对阵</Link>
-                  )}
-                </Space>
-              ),
-            },
-            {
-              title: '报名',
-              render: (_, row) =>
-                row.status === 'CREATED' ? (
-                  <Link to={`/signups?event=match:${row.id}`}>查看报名</Link>
-                ) : (
-                  <span className="muted">已截止</span>
+      <div className="table-page">
+        <QueryError error={query.error} retry={query.refetch} />
+        <Card className="content-card table-card">
+          <div className="table-toolbar">
+            <Space wrap>
+              <Input.Search
+                aria-label="搜索赛事"
+                placeholder="搜索赛事名称"
+                allowClear
+                onSearch={(value) => {
+                  setKeyword(value);
+                  setPage(1);
+                }}
+                style={{ width: 280 }}
+              />
+              <Select
+                aria-label="赛事状态"
+                value={status}
+                style={{ width: 150 }}
+                onChange={(value) => {
+                  setStatus(value);
+                  setPage(1);
+                }}
+                options={[
+                  { value: '', label: '全部赛事状态' },
+                  ...['CREATED', 'LIVE', 'FINISHED'].map((value) => ({
+                    value,
+                    label: label(value),
+                  })),
+                ]}
+              />
+            </Space>
+            <Space wrap>
+              <Refresh run={query.refetch} loading={query.isFetching} />
+              <Permit permission="matches.create">
+                <Button
+                  type="primary"
+                  aria-label="创建常规赛"
+                  icon={<PlusOutlined />}
+                  onClick={() => setSearch({ create: '1' })}
+                >
+                  创建常规赛
+                </Button>
+              </Permit>
+            </Space>
+          </div>
+          <Table<Match>
+            rowKey="id"
+            dataSource={query.data?.match_list}
+            loading={query.isPending}
+            locale={{ emptyText: empty }}
+            scroll={{ x: 950, y: tableScrollY }}
+            pagination={{
+              current: page,
+              pageSize,
+              total: query.data?.total || 0,
+              showSizeChanger: true,
+              showTotal: (total) => `共 ${total} 场赛事`,
+              onChange: (value, size) => {
+                setPage(value);
+                setPageSize(size);
+              },
+            }}
+            columns={[
+              {
+                title: '赛事',
+                dataIndex: 'name',
+                render: (_, row) => (
+                  <div className="cell-title">
+                    {row.name}
+                    <small>
+                      #{row.id} · {row.round}
+                    </small>
+                  </div>
                 ),
-            },
-          ]}
-        />
-      </Card>
+              },
+              { title: '状态', dataIndex: 'status', render: (value) => <Status value={value} /> },
+              { title: '赛制', dataIndex: 'bo' },
+              {
+                title: '选手 / 队伍',
+                render: (_, row) => `${row.player_count} 人 / ${row.team_count} 队`,
+              },
+              { title: '排期时间', dataIndex: 'date', render: dateText },
+              { title: '创建人', dataIndex: 'createdByName', render: (value) => value || '—' },
+              {
+                title: '操作',
+                width: 100,
+                render: (_, row) =>
+                  can(viewer, 'matches.view') && <Link to={`/matches/${row.id}`}>管理</Link>,
+              },
+              {
+                title: '报名',
+                render: (_, row) =>
+                  row.status === 'CREATED' ? (
+                    <Link to={`/signups?event=match:${row.id}`}>查看报名</Link>
+                  ) : (
+                    <span className="muted">已截止</span>
+                  ),
+              },
+            ]}
+          />
+        </Card>
+      </div>
       <Modal
         title="创建常规赛"
         open={open}
@@ -194,7 +199,13 @@ export default function Matches() {
           form={form}
           layout="vertical"
           requiredMark={false}
-          initialValues={{ bo: 'BO1', round: '常规赛', use_fee: true, captain_position: '' }}
+          initialValues={{
+            bo: 'BO1',
+            round: '常规赛',
+            use_fee: true,
+            captain_position: '',
+            date: todayBeijing(),
+          }}
           onFinish={(values) => create.mutate(values)}
           style={{ marginTop: 24 }}
         >
@@ -224,8 +235,8 @@ export default function Matches() {
           <Form.Item name="round" label="赛事轮次" rules={[{ required: true, whitespace: true }]}>
             <Input maxLength={40} />
           </Form.Item>
-          <Form.Item name="date" label="排期时间（北京时间）">
-            <Input type="datetime-local" />
+          <Form.Item name="date" label="排期日期（北京时间，固定 19:30 开赛）">
+            <Input type="date" />
           </Form.Item>
           <Form.Item name="captain_position" label="队长分路">
             <Select

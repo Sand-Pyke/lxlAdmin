@@ -35,4 +35,5 @@ export const MENU_PERMISSIONS: Record<string, Permission> = {
   '/markets': 'markets.view',
   '/shop': 'shop.view',
   '/recharge': 'points.recharge',
+  '/sponsors': 'sponsors.manage',
 };

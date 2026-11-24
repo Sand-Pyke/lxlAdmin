@@ -5,6 +5,8 @@ import {
   BarChartOutlined,
   WalletOutlined,
   DashboardOutlined,
+  GoldOutlined,
+  KeyOutlined,
   LogoutOutlined,
   MenuOutlined,
   ScheduleOutlined,
@@ -18,6 +20,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { roleLabel, useViewer } from '../auth';
 import { post } from '../api/client';
 import { can, MENU_PERMISSIONS } from '../permissions/access';
+import ChangePassword from './ChangePassword';
 
 const items = [
   { key: '/', icon: <DashboardOutlined />, label: '工作台' },
@@ -28,6 +31,7 @@ const items = [
   { key: '/markets', icon: <BarChartOutlined />, label: '竞猜管理' },
   { key: '/shop', icon: <ShoppingOutlined />, label: '商品管理' },
   { key: '/recharge', icon: <WalletOutlined />, label: '冠军币充值' },
+  { key: '/sponsors', icon: <GoldOutlined />, label: '赞助管理' },
 ];
 export default function Shell() {
   const viewer = useViewer();
@@ -36,6 +40,7 @@ export default function Shell() {
   const client = useQueryClient();
   const { message } = App.useApp();
   const [open, setOpen] = useState(false);
+  const [pwdOpen, setPwdOpen] = useState(false);
   const logout = useMutation({
     mutationFn: () => post('/api/logout'),
     onSuccess: async () => {
@@ -110,6 +115,7 @@ export default function Shell() {
             trigger={['click']}
             menu={{
               items: [
+                { key: 'pwd', label: '修改密码', icon: <KeyOutlined /> },
                 {
                   key: 'logout',
                   label: logout.isPending ? '正在退出…' : '退出登录',
@@ -117,7 +123,10 @@ export default function Shell() {
                   disabled: logout.isPending,
                 },
               ],
-              onClick: () => logout.mutate(),
+              onClick: ({ key }) => {
+                if (key === 'logout') logout.mutate();
+                if (key === 'pwd') setPwdOpen(true);
+              },
             }}
           >
             <button className="account-button">
@@ -132,10 +141,8 @@ export default function Shell() {
         <main className="page-content">
           <Outlet />
         </main>
-        <footer className="app-footer">
-          LXL 峡谷冠军联赛<span>管理平台 · 北京时间</span>
-        </footer>
       </div>
+      <ChangePassword open={pwdOpen} onClose={() => setPwdOpen(false)} />
     </div>
   );
 }

@@ -48,6 +48,16 @@ export type Match = {
   createdByName?: string;
 };
 export type MatchesResponse = { match_list: Match[]; total: number };
+export type SponsorEntry = {
+  id: number;
+  userId: number;
+  amount: number;
+  name: string;
+  gameName: string;
+  avatar: string;
+  rank: string;
+  position: string;
+};
 export type Signup = {
   sign_id: number;
   source: 'match' | 'season';

@@ -6,11 +6,14 @@ export function PageTitle({
   title,
   description,
   extra,
+  compact = false,
 }: {
-  title: string;
-  description: string;
+  title?: string;
+  description?: string;
   extra?: ReactNode;
+  compact?: boolean;
 }) {
+  if (compact) return extra ? <div className="page-actions">{extra}</div> : null;
   return (
     <div className="page-title">
       <div>
@@ -21,6 +24,7 @@ export function PageTitle({
     </div>
   );
 }
+export const tableScrollY = 'calc(100vh - 320px)';
 export function QueryError({ error, retry }: { error: Error | null; retry: () => unknown }) {
   return error ? (
     <Alert

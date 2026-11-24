@@ -27,7 +27,7 @@ import {
   reopenMarketBody,
 } from '../api/markets';
 import type { Bet, Market, MarketBets, MarketList, OpenBody } from '../api/markets';
-import { dateText, empty, PageTitle, QueryError, Refresh } from '../components/shared';
+import { dateText, empty, QueryError, Refresh } from '../components/shared';
 import '../styles/markets.css';
 import Permit from '../components/Permit';
 import { useViewer } from '../auth';
@@ -289,11 +289,6 @@ export default function Markets() {
   };
   return (
     <>
-      <PageTitle
-        title="竞猜管理"
-        description="管理赛事盘口、赔率、下注记录和结算。"
-        extra={<Refresh run={query.refetch} loading={query.isFetching} />}
-      />
       <QueryError error={query.error} retry={query.refetch} />
       <Card className="content-card market-open-card" title="开盘与赔率">
         <div className="market-open-fields">
@@ -440,9 +435,12 @@ export default function Markets() {
               全部日期
             </Button>
           </Space>
-          <span className="muted">
-            {dates ? `${dates[0]} 至 ${dates[1]}` : '全部日期'} · 每 10 秒刷新
-          </span>
+          <Space wrap>
+            <span className="muted">
+              {dates ? `${dates[0]} 至 ${dates[1]}` : '全部日期'} · 每 10 秒刷新
+            </span>
+            <Refresh run={query.refetch} loading={query.isFetching} />
+          </Space>
         </div>
         <Table<Market>
           rowKey="id"

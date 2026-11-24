@@ -22,7 +22,7 @@ import ShopEditor from '../components/ShopEditor';
 import Permit from '../components/Permit';
 import { can } from '../permissions/access';
 import { useViewer } from '../auth';
-import { empty, label, PageTitle, QueryError, Refresh } from '../components/shared';
+import { empty, label, QueryError, Refresh, tableScrollY } from '../components/shared';
 import '../styles/shop.css';
 
 export default function Shop() {
@@ -69,160 +69,156 @@ export default function Shop() {
   const busy = toggle.isPending || remove.isPending;
   return (
     <>
-      <PageTitle
-        title="商品管理"
-        description="管理商品图片、销售资料、库存和上架状态。"
-        extra={
-          <>
-            <Refresh run={query.refetch} loading={query.isFetching} />
-            <Permit permission="points.recharge">
-              <Link to="/recharge">
-                <Button>冠军币充值</Button>
-              </Link>
-            </Permit>
-            <Permit permission="shop.create">
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                aria-label="新建商品"
-                onClick={() => setEditor('create')}
-              >
-                新建商品
-              </Button>
-            </Permit>
-          </>
-        }
-      />
-      <QueryError error={query.error} retry={query.refetch} />
-      <Card className="content-card">
-        <div className="table-toolbar">
-          <Space wrap>
-            <Input.Search
-              aria-label="搜索商品"
-              placeholder="搜索商品名称或编码"
-              allowClear
-              style={{ width: 280 }}
-              onSearch={(value) => {
-                setKeyword(value);
-                setPage(1);
-              }}
-            />
-            <Select
-              aria-label="商品分类"
-              virtual={false}
-              value={category}
-              style={{ width: 150 }}
-              onChange={(value) => {
-                setCategory(value);
-                setPage(1);
-              }}
-              options={[
-                { value: '', label: '全部分类' },
-                ...[...new Set(query.data?.items.map((row) => row.category))].map((value) => ({
-                  value,
-                  label: label(value),
-                })),
-              ]}
-            />
-          </Space>
-        </div>
-        <Table<ShopItem>
-          rowKey="id"
-          dataSource={rows}
-          loading={query.isPending}
-          locale={{ emptyText: empty }}
-          scroll={{ x: 1150 }}
-          pagination={{
-            current: page,
-            onChange: setPage,
-            pageSize: 10,
-            showTotal: (total) => `共 ${total} 件商品`,
-          }}
-          columns={[
-            {
-              title: '图片',
-              width: 70,
-              dataIndex: 'icon',
-              render: (value: string) =>
-                imageSource(value) ? (
-                  <img className="shop-icon" src={value} alt="" />
-                ) : (
-                  <span>{value || '—'}</span>
+      <div className="table-page">
+        <QueryError error={query.error} retry={query.refetch} />
+        <Card className="content-card table-card">
+          <div className="table-toolbar">
+            <Space wrap>
+              <Input.Search
+                aria-label="搜索商品"
+                placeholder="搜索商品名称或编码"
+                allowClear
+                style={{ width: 280 }}
+                onSearch={(value) => {
+                  setKeyword(value);
+                  setPage(1);
+                }}
+              />
+              <Select
+                aria-label="商品分类"
+                virtual={false}
+                value={category}
+                style={{ width: 150 }}
+                onChange={(value) => {
+                  setCategory(value);
+                  setPage(1);
+                }}
+                options={[
+                  { value: '', label: '全部分类' },
+                  ...[...new Set(query.data?.items.map((row) => row.category))].map((value) => ({
+                    value,
+                    label: label(value),
+                  })),
+                ]}
+              />
+            </Space>
+            <Space wrap>
+              <Refresh run={query.refetch} loading={query.isFetching} />
+              <Permit permission="points.recharge">
+                <Link to="/recharge">
+                  <Button>冠军币充值</Button>
+                </Link>
+              </Permit>
+              <Permit permission="shop.create">
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  aria-label="新建商品"
+                  onClick={() => setEditor('create')}
+                >
+                  新建商品
+                </Button>
+              </Permit>
+            </Space>
+          </div>
+          <Table<ShopItem>
+            rowKey="id"
+            dataSource={rows}
+            loading={query.isPending}
+            locale={{ emptyText: empty }}
+            scroll={{ x: 1150, y: tableScrollY }}
+            pagination={{
+              current: page,
+              onChange: setPage,
+              pageSize: 10,
+              showTotal: (total) => `共 ${total} 件商品`,
+            }}
+            columns={[
+              {
+                title: '图片',
+                width: 70,
+                dataIndex: 'icon',
+                render: (value: string) =>
+                  imageSource(value) ? (
+                    <img className="shop-icon" src={value} alt="" />
+                  ) : (
+                    <span>{value || '—'}</span>
+                  ),
+              },
+              {
+                title: '商品名称',
+                width: 265,
+                render: (_, row) => (
+                  <div className="cell-title">
+                    {row.name}
+                    <small>
+                      #{row.id} · {row.description || '暂无描述'}
+                    </small>
+                    {(row.eligibleMinUserId != null || row.eligibleMaxUserId != null) && (
+                      <Tag color="gold">限定领取</Tag>
+                    )}
+                  </div>
                 ),
-            },
-            {
-              title: '商品名称',
-              width: 265,
-              render: (_, row) => (
-                <div className="cell-title">
-                  {row.name}
-                  <small>
-                    #{row.id} · {row.description || '暂无描述'}
-                  </small>
-                  {(row.eligibleMinUserId != null || row.eligibleMaxUserId != null) && (
-                    <Tag color="gold">限定领取</Tag>
-                  )}
-                </div>
-              ),
-            },
-            { title: '分类', dataIndex: 'category', render: label },
-            { title: '价格', dataIndex: 'price', render: (value) => `${value} 冠军币` },
-            {
-              title: '有效期',
-              dataIndex: 'durationDays',
-              render: (value) => (value == null ? '永久' : `${value} 天`),
-            },
-            {
-              title: '库存',
-              dataIndex: 'stock',
-              render: (value) => (value == null ? '不限' : value),
-            },
-            {
-              title: '状态',
-              dataIndex: 'enabled',
-              render: (value) => (
-                <Tag bordered={false} color={value ? 'green' : 'default'}>
-                  {value ? '已上架' : '已下架'}
-                </Tag>
-              ),
-            },
-            {
-              title: '操作',
-              width: 230,
-              render: (_, row) => (
-                <Space wrap>
-                  <Permit permission="shop.update">
-                    <Button type="link" disabled={busy} onClick={() => setEditor(row)}>
-                      编辑
-                    </Button>
-                    <Popconfirm
-                      title={`确认${row.enabled ? '下架' : '上架'}「${row.name}」？`}
-                      onConfirm={() => toggle.mutateAsync(row).catch(() => undefined)}
-                    >
-                      <Button type="link" disabled={busy}>
-                        {row.enabled ? '下架' : '上架'}
+              },
+              { title: '分类', dataIndex: 'category', render: label },
+              { title: '价格', dataIndex: 'price', render: (value) => `${value} 冠军币` },
+              {
+                title: '有效期',
+                dataIndex: 'durationDays',
+                render: (value) => (value == null ? '永久' : `${value} 天`),
+              },
+              {
+                title: '库存',
+                dataIndex: 'stock',
+                render: (value) => (value == null ? '不限' : value),
+              },
+              {
+                title: '状态',
+                dataIndex: 'enabled',
+                render: (value) => (
+                  <Tag bordered={false} color={value ? 'green' : 'default'}>
+                    {value ? '已上架' : '已下架'}
+                  </Tag>
+                ),
+              },
+              {
+                title: '操作',
+                width: 230,
+                render: (_, row) => (
+                  <Space wrap>
+                    <Permit permission="shop.update">
+                      <Button type="link" disabled={busy} onClick={() => setEditor(row)}>
+                        编辑
                       </Button>
-                    </Popconfirm>
-                  </Permit>
-                  <Permit permission="shop.delete">
-                    <Button
-                      type="link"
-                      danger
-                      disabled={busy}
-                      onClick={() => {
-                        remove.reset();
-                        setDeleting(row);
-                      }}
-                    >
-                      删除
-                    </Button>
-                  </Permit>
-                </Space>
-              ),
-            },
-          ]}
-        />
-      </Card>
+                      <Popconfirm
+                        title={`确认${row.enabled ? '下架' : '上架'}「${row.name}」？`}
+                        onConfirm={() => toggle.mutateAsync(row).catch(() => undefined)}
+                      >
+                        <Button type="link" disabled={busy}>
+                          {row.enabled ? '下架' : '上架'}
+                        </Button>
+                      </Popconfirm>
+                    </Permit>
+                    <Permit permission="shop.delete">
+                      <Button
+                        type="link"
+                        danger
+                        disabled={busy}
+                        onClick={() => {
+                          remove.reset();
+                          setDeleting(row);
+                        }}
+                      >
+                        删除
+                      </Button>
+                    </Permit>
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        </Card>
+      </div>
       {editor && (
         <ShopEditor
           key={editor === 'create' ? 'create' : editor.id}

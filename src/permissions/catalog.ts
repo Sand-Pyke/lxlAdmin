@@ -31,6 +31,7 @@ export const ADMIN_CAPABILITIES = [
   'shop.delete',
   'shop.upload',
   'points.recharge',
+  'sponsors.manage',
 ] as const;
 export type AdminCapability = (typeof ADMIN_CAPABILITIES)[number];
 export type AdminRole = 'USER' | 'ADMIN' | 'SECONDARY_ADMIN' | 'CORE_ADMIN';
