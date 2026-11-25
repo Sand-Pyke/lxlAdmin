@@ -8,6 +8,12 @@ import { IMAGE_WIDTHS, thumbnailWidth } from '@/lib/image-thumbnail';
 export const IMAGE_KINDS = ['avatars', 'user-bg', 'team-logos', 'shop-icons'] as const;
 export type ImageKind = (typeof IMAGE_KINDS)[number];
 const FILE_NAME = /^[uts]\d+(_\d+)?\.(jpg|jpeg|png|gif|webp|svg)$/;
+const CAPTAIN_TEAM_LOGO_NAME = /^m\d+_u\d+_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.(jpg|jpeg|png|gif|webp|svg)$/;
+
+export function isUploadedImageName(kind: ImageKind | 'videos', name: string) {
+  return FILE_NAME.test(name) || (kind === 'team-logos' && CAPTAIN_TEAM_LOGO_NAME.test(name));
+}
+
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const immutableName = (name: string) => /_\d+\./.test(name);
 const mime = (name: string) =>
@@ -189,7 +195,7 @@ export function createImageDelivery(options: Options) {
   }
 
   async function serve(kind: ImageKind, name: string, requestedWidth?: unknown): Promise<Response> {
-    if (!FILE_NAME.test(name)) return new Response('Not Found', { status: 404 });
+    if (!isUploadedImageName(kind, name)) return new Response('Not Found', { status: 404 });
     const width = thumbnailWidth(requestedWidth);
     if (requestedWidth != null && requestedWidth !== '' && !width)
       return new Response('Invalid image size', { status: 400 });
@@ -254,7 +260,7 @@ export function createImageDelivery(options: Options) {
   }
 
   function warm(kind: ImageKind, name: string, widths: readonly number[] = [128, 384]) {
-    if (!FILE_NAME.test(name) || queue.length >= 32 || name.endsWith('.svg')) return;
+    if (!isUploadedImageName(kind, name) || queue.length >= 32 || name.endsWith('.svg')) return;
     void (async () => {
       const source = await resolve(kind, name);
       if (!source) return;

@@ -17,7 +17,7 @@ import OSS from 'ali-oss';
 import { ossEnabled, ossEndpoint } from '@/lib/oss-endpoint';
 import { assetRoot } from '@/lib/storage-paths';
 import { thumbnailWidth } from '@/lib/image-thumbnail';
-import { createImageDelivery, IMAGE_KINDS, type ImageKind } from '@/server/image-delivery';
+import { createImageDelivery, IMAGE_KINDS, isUploadedImageName, type ImageKind } from '@/server/image-delivery';
 
 /**
  * 选手上传的图片（头像、自定义背景）。
@@ -65,7 +65,6 @@ function legacyDir(kind: UploadKind) {
 /** 只接受 `u<用户ID>_<时间戳>.<后缀>` 与旧命名 `u<用户ID>.<后缀>`，战队 Logo 的
  * `t<管理员ID>_<时间戳>.<后缀>`，以及商城图标的 `s<管理员ID>_<时间戳>.<后缀>`，
  * 杜绝目录穿越与任意文件读取。 */
-const FILE_NAME = /^[uts]\d+(_\d+)?\.(jpg|jpeg|png|gif|webp|svg)$/;
 
 /* ------------------------------- OSS 存储 ------------------------------- */
 
@@ -246,7 +245,7 @@ export async function removeOldUploads(
       const result = await client.list({ prefix: ossKey(kind, ''), marker, 'max-keys': 1000 }, {});
       for (const object of result.objects ?? []) {
         const name = object.name.split('/').pop() ?? '';
-        if (name !== keep && FILE_NAME.test(name) && isOwn(name)) names.push(name);
+        if (name !== keep && isUploadedImageName(kind, name) && isOwn(name)) names.push(name);
       }
       marker = result.nextMarker || undefined;
     } while (marker);
@@ -277,7 +276,7 @@ function uploadedImageProcess(kind: UploadKind, name: string, requestedWidth?: n
 
 /** 读取一张上传图片：OSS 优先，再兜底本地数据目录与 public/ 里的历史文件。 */
 export async function readUploadedImage(kind: UploadKind, name: string, width?: number) {
-  if (!FILE_NAME.test(name)) return null;
+  if (!isUploadedImageName(kind, name)) return null;
   const contentType = imageContentType(name);
   if (!contentType) return null;
   const client = ossClient();
