@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import {
   Alert,
   App,
@@ -47,6 +47,8 @@ import { can } from '../permissions/access';
 import { useViewer } from '../auth';
 import { QueryError, Refresh, Status, dateText, label } from '../components/shared';
 import { teamLogo } from '../data/draft-teams';
+
+const MatchRoster = memo(RosterPanel);
 
 type ScorePair = {
   teamOneId: number;
@@ -103,18 +105,25 @@ export default function MatchManage() {
   });
   const board = boardQuery.data;
 
-  const invalidate = () => client.invalidateQueries({ queryKey: ['match-board', matchId] });
+  const invalidate = useCallback(
+    () => client.invalidateQueries({ queryKey: ['match-board', matchId] }),
+    [client, matchId],
+  );
 
   const run = useMutation({
     mutationFn: (payload: { url: string; body?: unknown; fallback: string }) => {
       if (payload.url.startsWith('/api/admin/match/delete/') && !isCoreAdmin) {
         throw new Error('仅核心管理员可以删除赛事');
       }
-      return post<{ msg?: string; advanceError?: string }>(payload.url, payload.body);
+      return post<{ msg?: string; advanceError?: string; warning?: string }>(
+        payload.url,
+        payload.body,
+      );
     },
     onSuccess: (data, payload) => {
       void message.success(data.msg || payload.fallback);
       if (typeof data.advanceError === 'string') void message.warning(data.advanceError);
+      if (data.warning) void message.warning(data.warning);
       void invalidate();
     },
     onError: (error) => void message.error(error.message),
@@ -131,6 +140,7 @@ export default function MatchManage() {
     onSuccess: (data) => {
       void message.success(data.msg || '战果已保存');
       if (typeof data.advanceError === 'string') void message.warning(data.advanceError);
+      if (data.warning) void message.warning(data.warning);
       void invalidate();
     },
     onError: (error) => void message.error(error.message),
@@ -460,7 +470,7 @@ export default function MatchManage() {
             </Space>
           </Card>
           {rosterOpen && can(viewer, 'draft.control') && (
-            <RosterPanel board={board} loading={boardQuery.isFetching} onReload={invalidate} />
+            <MatchRoster board={board} loading={boardQuery.isFetching} onReload={invalidate} />
           )}
 
           <Modal
@@ -582,10 +592,15 @@ export default function MatchManage() {
             open={scoreOpen}
             okText="保存"
             cancelText="取消"
-            confirmLoading={run.isPending}
+            confirmLoading={saveScores.isPending}
+            closable={!saveScores.isPending}
+            mask={{ closable: !saveScores.isPending }}
+            keyboard={!saveScores.isPending}
+            cancelButtonProps={{ disabled: saveScores.isPending }}
             width={640}
             onCancel={() => setScoreOpen(false)}
             onOk={() => {
+              if (saveScores.isPending) return;
               if (board.current_round !== scoreEditingRound) {
                 void message.warning('赛事轮次已变化，请重新打开比分窗口核对对阵');
                 return;
@@ -682,7 +697,7 @@ export default function MatchManage() {
                       min={0}
                       max={BO_WINS[scoreBo] ?? 0}
                       value={pair.scoreOne}
-                      disabled={!isCoreAdmin && pair.hasScore}
+                      disabled={saveScores.isPending || (!isCoreAdmin && pair.hasScore)}
                       onChange={(value) =>
                         setScorePairs((prev) =>
                           prev.map((item, itemIndex) =>
@@ -698,7 +713,7 @@ export default function MatchManage() {
                       min={0}
                       max={BO_WINS[scoreBo] ?? 0}
                       value={pair.scoreTwo}
-                      disabled={!isCoreAdmin && pair.hasScore}
+                      disabled={saveScores.isPending || (!isCoreAdmin && pair.hasScore)}
                       onChange={(value) =>
                         setScorePairs((prev) =>
                           prev.map((item, itemIndex) =>

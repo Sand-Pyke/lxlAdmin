@@ -82,6 +82,60 @@ export async function applyLedger(
   return updated.balance;
 }
 
+/** Credit a settlement in batches while keeping one ledger entry per original credit. */
+export async function creditLedger(
+  tx: Prisma.TransactionClient,
+  credits: { userId: number; amount: number; note?: string }[],
+  type: 'BET_WIN' | 'BET_REFUND' | 'PRIZE_GRANT',
+  refType: 'BET' | 'PRIZE',
+  refId: number,
+) {
+  if (!credits.length) return;
+  const totals = new Map<number, number>();
+  for (const { userId, amount } of credits) {
+    if (!Number.isInteger(amount) || amount < 0) throw badRequest('冠军币入账必须是非负整数');
+    totals.set(userId, (totals.get(userId) ?? 0) + amount);
+  }
+  const byUser = [...totals]
+    .sort(([one], [two]) => one - two)
+    .map(([userId, amount]) => ({ userId, amount }));
+  await tx.pointWallet.createMany({
+    data: byUser.map(({ userId }) => ({ userId })),
+    skipDuplicates: true,
+  });
+  // Lock in user order, matching the ordering used by independent market settlements.
+  const updated = await tx.$queryRaw<{ userId: number; balance: number }[]>`
+    WITH credits AS (
+      SELECT * FROM jsonb_to_recordset(${JSON.stringify(byUser)}::jsonb)
+        AS credit("userId" integer, amount integer)
+    ), locked AS (
+      SELECT wallet."userId", credits.amount
+      FROM "PointWallet" AS wallet
+      JOIN credits USING ("userId")
+      ORDER BY wallet."userId"
+      FOR UPDATE OF wallet
+    )
+    UPDATE "PointWallet" AS wallet
+    SET balance = wallet.balance + locked.amount,
+        "totalEarned" = wallet."totalEarned" + locked.amount,
+        "updatedAt" = ${new Date()}
+    FROM locked
+    WHERE wallet."userId" = locked."userId"
+    RETURNING wallet."userId", wallet.balance
+  `;
+  if (updated.length !== totals.size) throw badRequest('冠军币钱包不存在');
+  const balances = new Map(
+    updated.map(({ userId, balance }) => [userId, balance - totals.get(userId)!]),
+  );
+  await tx.pointTransaction.createMany({
+    data: credits.map(({ userId, amount, note = '' }) => {
+      const balanceAfter = balances.get(userId)! + amount;
+      balances.set(userId, balanceAfter);
+      return { userId, amount, type, refType, refId, balanceAfter, note };
+    }),
+  });
+}
+
 /** 读取钱包（不存在则建，返回余额）。 */
 export async function getWallet(userId: number) {
   const wallet = await prisma.pointWallet.upsert({

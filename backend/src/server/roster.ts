@@ -276,6 +276,12 @@ export async function endRound(
       },
       select: { userId: true, teamId: true },
     });
+    const championUserIds = finalSignups
+      .filter((s) => s.teamId === championTeamId)
+      .map((s) => s.userId);
+    const runnerupUserIds = finalSignups
+      .filter((s) => s.teamId === runnerupTeamId)
+      .map((s) => s.userId);
     await prisma.$transaction(async (tx) => {
       await lockRound(tx);
       await tx.matchRound.deleteMany({ where: { matchId, roundNo } });
@@ -287,14 +293,14 @@ export async function endRound(
           teamTwoId,
         })),
       });
-      await Promise.all(
-        finalSignups.map((signup) =>
-          tx.matchGameRecord.updateMany({
-            where: { matchId, userId: signup.userId },
-            data: { teamRank: signup.teamId === championTeamId ? 1 : 2 },
-          }),
-        ),
-      );
+      await tx.matchGameRecord.updateMany({
+        where: { matchId, userId: { in: championUserIds } },
+        data: { teamRank: 1 },
+      });
+      await tx.matchGameRecord.updateMany({
+        where: { matchId, userId: { in: runnerupUserIds } },
+        data: { teamRank: 2 },
+      });
       await tx.match.update({
         where: { id: matchId },
         data: {
@@ -309,9 +315,7 @@ export async function endRound(
         where: {
           matchId,
           teamId: championTeamId,
-          ownerId: {
-            in: finalSignups.filter((s) => s.teamId === championTeamId).map((s) => s.userId),
-          },
+          ownerId: { in: championUserIds },
           card: { consumedAt: { not: null } },
         },
         distinct: ['ownerId'],
@@ -321,8 +325,15 @@ export async function endRound(
         await awardHeroProtectionCard(tx, protection.ownerId, matchId, 'CHAMPION');
     });
     // 冠军池发放（best-effort）：决赛固化名次后按最终名次给参赛队员发冠军币。
-    await distributeMatchPrizes(matchId).catch(() => undefined);
-    return { kind: 'ok' as const, roundNo, finished: true, championTeamId };
+    const warning = await distributeMatchPrizes(matchId).then(
+      () => undefined,
+      (error: unknown) => {
+        const code = (error as { code?: string } | null)?.code;
+        console.error('Match prize settlement failed', { matchId, code });
+        return '赛事已结束，冠军池结算未完成，请核对发放状态。';
+      },
+    );
+    return { kind: 'ok' as const, roundNo, finished: true, championTeamId, warning };
   }
 
   // 半决赛及之前：胜者按顺序两两配对成下一轮。

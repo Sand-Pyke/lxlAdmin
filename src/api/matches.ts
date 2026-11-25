@@ -155,7 +155,7 @@ export async function submitRoundScores(input: {
   pairs: ScorePair[];
   remaining: number;
   advance: boolean;
-}): Promise<{ msg?: string; advanceError?: string }> {
+}): Promise<{ msg?: string; advanceError?: string; warning?: string }> {
   for (const { teamOneId, teamTwoId, scoreOne, scoreTwo } of input.pairs) {
     await post('/api/admin/match/score', {
       matchId: input.matchId,

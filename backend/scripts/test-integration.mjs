@@ -388,6 +388,160 @@ try {
   console.log(
     'PASS core-only shop/markets and transactional recharge ledger/notification, sponsor CRUD',
   );
+  const final = await db.match.create({
+    data: { name: 'Fixture final', status: 'LIVE', bo: 'BO1', prizePoolJson: '{"1":100,"2":60}' },
+  });
+  const [finalOne, finalTwo] = await db.team.createManyAndReturn({
+    data: [
+      { matchId: final.id, name: 'Final A', sortOrder: 1 },
+      { matchId: final.id, name: 'Final B', sortOrder: 2 },
+    ],
+  });
+  const finalists = [
+    { matchId: final.id, teamId: finalOne.id, userId: target.id },
+    { matchId: final.id, teamId: finalTwo.id, userId: actors.player.id },
+  ];
+  await db.matchSignup.createMany({ data: finalists });
+  await db.matchGameRecord.createMany({
+    data: finalists.map((sign, index) => ({
+      ...sign,
+      champion: 'Fixture',
+      result: index === 0 ? 'win' : 'lose',
+    })),
+  });
+  const market = {
+    matchId: final.id,
+    matchRoundNo: 1,
+    teamOneId: finalOne.id,
+    teamTwoId: finalTwo.id,
+    bettingCloseAt: new Date(),
+  };
+  const seriesMarket = await db.matchMarket.create({ data: market });
+  const unplayedMarket = await db.matchMarket.create({
+    data: { ...market, marketKind: 'GAME_WIN', roundNo: 2 },
+  });
+  const win = await db.marketOutcome.create({
+    data: { marketId: seriesMarket.id, outcomeKey: 'TEAM_ONE_WIN', label: 'Final A' },
+  });
+  const loss = await db.marketOutcome.create({
+    data: { marketId: seriesMarket.id, outcomeKey: 'TEAM_TWO_WIN', label: 'Final B' },
+  });
+  const refund = await db.marketOutcome.create({
+    data: { marketId: unplayedMarket.id, outcomeKey: 'TEAM_ONE_WIN' },
+  });
+  await db.bet.createMany({
+    data: [
+      {
+        marketId: seriesMarket.id,
+        outcomeId: win.id,
+        userId: target.id,
+        stake: 15,
+        potentialPayout: 30,
+      },
+      {
+        marketId: seriesMarket.id,
+        outcomeId: win.id,
+        userId: target.id,
+        stake: 25,
+        potentialPayout: 50,
+      },
+      {
+        marketId: seriesMarket.id,
+        outcomeId: loss.id,
+        userId: actors.player.id,
+        stake: 10,
+        potentialPayout: 20,
+      },
+      {
+        marketId: unplayedMarket.id,
+        outcomeId: refund.id,
+        userId: target.id,
+        stake: 15,
+        potentialPayout: 30,
+      },
+      {
+        marketId: unplayedMarket.id,
+        outcomeId: refund.id,
+        userId: target.id,
+        stake: 25,
+        potentialPayout: 50,
+      },
+    ].map((bet) => ({ ...bet, oddsAtBet: 2 })),
+  });
+  const score = {
+    matchId: final.id,
+    roundNo: 1,
+    teamOneId: finalOne.id,
+    teamTwoId: finalTwo.id,
+    scoreOne: 1,
+    scoreTwo: 0,
+  };
+  await db.pointWallet.update({
+    where: { userId: target.id },
+    data: { balance: 2147483647 },
+  });
+  const failedScore = await call('/api/admin/match/score', {
+    method: 'POST',
+    cookie: cookies.core,
+    body: score,
+  });
+  assert.equal(failedScore.status, 500);
+  assert.equal(await db.matchScore.count({ where: { matchId: final.id } }), 0);
+  assert.equal(await db.bet.count({ where: { marketId: seriesMarket.id, status: 'OPEN' } }), 3);
+  assert.equal(await db.pointTransaction.count({ where: { userId: target.id } }), 1);
+  await db.pointWallet.update({ where: { userId: target.id }, data: { balance: 50 } });
+  await post('/api/admin/match/score', cookies.core, score);
+  await post('/api/admin/match/score', cookies.core, score);
+  const settled = await db.bet.findMany({
+    where: { marketId: { in: [seriesMarket.id, unplayedMarket.id] } },
+    orderBy: { id: 'asc' },
+  });
+  assert.deepEqual(
+    settled.map((bet) => [bet.status, bet.settledPayout]),
+    [
+      ['WON', 30],
+      ['WON', 50],
+      ['LOST', 0],
+      ['REFUNDED', 15],
+      ['REFUNDED', 25],
+    ],
+  );
+  assert.equal(await db.userNotification.count({ where: { type: 'BET_RESULT' } }), 3);
+  const ended = await post(`/api/admin/match/round/end/${final.id}`, cookies.core, { roundNo: 1 });
+  assert.equal(ended.finished, true);
+  assert.equal(ended.warning, undefined);
+  assert.equal(
+    (await db.match.findUniqueOrThrow({ where: { id: final.id } })).prizeDistributed,
+    true,
+  );
+  await post(`/api/admin/match/round/end/${final.id}`, cookies.core, { roundNo: 1 });
+  const ledger = await db.pointTransaction.findMany({
+    where: { userId: target.id, type: { in: ['BET_WIN', 'BET_REFUND', 'PRIZE_GRANT'] } },
+    orderBy: { id: 'asc' },
+  });
+  assert.deepEqual(
+    ledger.map(({ type, amount, balanceAfter }) => [type, amount, balanceAfter]),
+    [
+      ['BET_WIN', 30, 80],
+      ['BET_WIN', 50, 130],
+      ['BET_REFUND', 15, 145],
+      ['BET_REFUND', 25, 170],
+      ['PRIZE_GRANT', 100, 270],
+    ],
+  );
+  const wallet = await db.pointWallet.findUniqueOrThrow({ where: { userId: target.id } });
+  assert.deepEqual([wallet.balance, wallet.totalEarned], [270, 270]);
+  assert.equal(
+    (await db.pointWallet.findUniqueOrThrow({ where: { userId: actors.player.id } })).balance,
+    60,
+  );
+  assert.equal(await db.userNotification.count({ where: { type: 'PRIZE_GRANT' } }), 2);
+  const finalRecords = await db.matchGameRecord.findMany({ where: { matchId: final.id } });
+  assert.equal(finalRecords.find((record) => record.teamId === finalOne.id)?.teamRank, 1);
+  assert.equal(finalRecords.find((record) => record.teamId === finalTwo.id)?.teamRank, 2);
+  console.log(
+    'PASS score settlement rollback, repeated payouts for the same wallet, refunds, final ranks and prize idempotency',
+  );
   const csrf = await call('/api/admin/users/rank', {
     method: 'POST',
     cookie: cookies.core,

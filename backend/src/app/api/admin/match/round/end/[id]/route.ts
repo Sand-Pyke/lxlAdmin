@@ -20,6 +20,7 @@ export const POST = adminRoute<{ id: string }>(async ({ params, body, adminId })
       msg: `决赛结束，第${outcome.roundNo}轮战果已固化，赛事圆满收官！`,
       roundNo: outcome.roundNo,
       finished: true,
+      warning: outcome.warning,
     };
   }
   return {

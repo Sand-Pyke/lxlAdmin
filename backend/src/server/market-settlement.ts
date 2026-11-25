@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { badRequest, notFound } from '@/server/api';
-import { applyLedger } from '@/server/points';
+import { creditLedger } from '@/server/points';
 import { marketRoundLabel } from '@/lib/admin-options';
 export type OutcomeKey = 'TEAM_ONE_WIN' | 'TEAM_TWO_WIN';
 const OUTCOME_KEYS: OutcomeKey[] = ['TEAM_ONE_WIN', 'TEAM_TWO_WIN'];
@@ -31,30 +31,34 @@ export async function settleMarketInTransaction(
     where: { marketId, status: 'OPEN' },
     orderBy: [{ userId: 'asc' }, { id: 'asc' }],
   });
-  for (const bet of bets) {
-    if (bet.outcomeId === winner.id) {
-      await tx.bet.update({
-        where: { id: bet.id },
-        data: { status: 'WON', settledPayout: bet.potentialPayout, settledAt: new Date() },
-      });
-      await applyLedger(tx, bet.userId, bet.potentialPayout, 'BET_WIN', 'BET', marketId, '');
-    } else {
-      await tx.bet.update({
-        where: { id: bet.id },
-        data: { status: 'LOST', settledAt: new Date() },
-      });
-    }
+  const settledAt = new Date();
+  const winners = bets.filter((bet) => bet.outcomeId === winner.id);
+  if (bets.length) {
+    // The market lock also guards placement of new bets.
+    await tx.$executeRaw`
+      UPDATE "Bet"
+      SET status = CASE WHEN "outcomeId" = ${winner.id} THEN 'WON'::"BetStatus" ELSE 'LOST'::"BetStatus" END,
+          "settledPayout" = CASE WHEN "outcomeId" = ${winner.id} THEN "potentialPayout" ELSE "settledPayout" END,
+          "settledAt" = ${settledAt}
+      WHERE "marketId" = ${marketId} AND status = 'OPEN'
+    `;
+    await creditLedger(
+      tx,
+      winners.map((bet) => ({ userId: bet.userId, amount: bet.potentialPayout })),
+      'BET_WIN',
+      'BET',
+      marketId,
+    );
   }
   await tx.matchMarket.update({
     where: { id: marketId },
-    data: { status: 'SETTLED', settledAt: new Date() },
+    data: { status: 'SETTLED', settledAt },
   });
+  if (!bets.length) return { settled: 0, total_stake: 0, total_payout: 0, pnl: 0 };
 
   // 结算后给每位投注用户发通知：中奖则告知派彩与净赚，未中奖则告知亏损本金。
   const totalStake = bets.reduce((sum, b) => sum + b.stake, 0);
-  const totalPayout = bets
-    .filter((b) => b.outcomeId === winner.id)
-    .reduce((sum, b) => sum + b.potentialPayout, 0);
+  const totalPayout = winners.reduce((sum, b) => sum + b.potentialPayout, 0);
   const pnl = totalStake - totalPayout;
 
   let sourceName = '赛事';
@@ -86,23 +90,21 @@ export async function settleMarketInTransaction(
 
   const outcomeLabelMap = new Map(outcomes.map((o) => [o.id, o.label]));
   const roundText = marketRoundLabel(market.marketKind, market.roundNo);
-  if (bets.length > 0) {
-    await tx.userNotification.createMany({
-      data: bets.map((bet) => {
-        const won = bet.outcomeId === winner.id;
-        const label = outcomeLabelMap.get(bet.outcomeId) ?? '';
-        const net = won ? bet.potentialPayout - bet.stake : -bet.stake;
-        return {
-          userId: bet.userId,
-          type: 'BET_RESULT',
-          title: won ? '竞猜中奖' : '竞猜未中奖',
-          content: won
-            ? `「${sourceName}」${roundText}盘口已结算：你押「${label}」中奖，投注 ${bet.stake} 冠军币，派彩 ${bet.potentialPayout} 冠军币，净赚 ${net} 冠军币`
-            : `「${sourceName}」${roundText}盘口已结算：你押「${label}」未中奖，投注 ${bet.stake} 冠军币，亏损 ${-net} 冠军币`,
-        };
-      }),
-    });
-  }
+  await tx.userNotification.createMany({
+    data: bets.map((bet) => {
+      const won = bet.outcomeId === winner.id;
+      const label = outcomeLabelMap.get(bet.outcomeId) ?? '';
+      const net = won ? bet.potentialPayout - bet.stake : -bet.stake;
+      return {
+        userId: bet.userId,
+        type: 'BET_RESULT',
+        title: won ? '竞猜中奖' : '竞猜未中奖',
+        content: won
+          ? `「${sourceName}」${roundText}盘口已结算：你押「${label}」中奖，投注 ${bet.stake} 冠军币，派彩 ${bet.potentialPayout} 冠军币，净赚 ${net} 冠军币`
+          : `「${sourceName}」${roundText}盘口已结算：你押「${label}」未中奖，投注 ${bet.stake} 冠军币，亏损 ${-net} 冠军币`,
+      };
+    }),
+  });
 
   return { settled: bets.length, total_stake: totalStake, total_payout: totalPayout, pnl };
 }
@@ -118,16 +120,24 @@ export async function voidMarketInTransaction(tx: Prisma.TransactionClient, mark
     where: { marketId, status: 'OPEN' },
     orderBy: [{ userId: 'asc' }, { id: 'asc' }],
   });
-  for (const bet of bets) {
-    await tx.bet.update({
-      where: { id: bet.id },
-      data: { status: 'REFUNDED', settledPayout: bet.stake, settledAt: new Date() },
-    });
-    await applyLedger(tx, bet.userId, bet.stake, 'BET_REFUND', 'BET', marketId, '');
+  const settledAt = new Date();
+  if (bets.length) {
+    await tx.$executeRaw`
+      UPDATE "Bet"
+      SET status = 'REFUNDED', "settledPayout" = stake, "settledAt" = ${settledAt}
+      WHERE "marketId" = ${marketId} AND status = 'OPEN'
+    `;
+    await creditLedger(
+      tx,
+      bets.map((bet) => ({ userId: bet.userId, amount: bet.stake })),
+      'BET_REFUND',
+      'BET',
+      marketId,
+    );
   }
   await tx.matchMarket.update({
     where: { id: marketId },
-    data: { status: 'VOID', settledAt: new Date() },
+    data: { status: 'VOID', settledAt },
   });
   return { refunded: bets.length };
 }

@@ -1,8 +1,9 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { settleAllInCards } from '@/server/all-in-card';
 import { badRequest, notFound } from '@/server/api';
 import { isCoreAdminActor } from '@/server/permissions';
-import { applyLedger } from '@/server/points';
+import { creditLedger } from '@/server/points';
 import { SIX_TEAM_FORMAT, SIX_TEAM_FORMAT_V2 } from '@/lib/admin-options';
 import {
   PRIZE_PLACE_LABELS,
@@ -89,6 +90,30 @@ export async function setSeasonPrizePool(seasonId: number, input: unknown, actor
 
 // ---------- 发放 ----------
 
+type PrizeRecipient = { userId: number; amount: number; place: number };
+
+async function awardPrizes(
+  tx: Prisma.TransactionClient,
+  contest: { id: number; name: string },
+  recipients: PrizeRecipient[],
+  teamLabel: '队伍' | '战队',
+) {
+  const credits = recipients.map(({ userId, amount, place }) => ({
+    userId,
+    amount,
+    note: PRIZE_PLACE_LABELS[place] ?? String(place),
+  }));
+  await creditLedger(tx, credits, 'PRIZE_GRANT', 'PRIZE', contest.id);
+  await tx.userNotification.createMany({
+    data: credits.map(({ userId, amount, note }) => ({
+      userId,
+      type: 'PRIZE_GRANT',
+      title: '冠军池奖励',
+      content: `「${contest.name}」你所在${teamLabel}获得「${note}」，已发放 ${amount} 冠军币`,
+    })),
+  });
+}
+
 /** 常规赛发放冠军池（幂等）：按最终名次档给每位在队选手发对应金额。 */
 export async function distributeMatchPrizes(matchId: number) {
   await settleAllInCards(matchId);
@@ -124,7 +149,7 @@ export async function distributeMatchPrizes(matchId: number) {
     if (place > 0) placeByTeam.set(team.id, place);
   }
 
-  const recipients: { userId: number; amount: number; place: number }[] = [];
+  const recipients: PrizeRecipient[] = [];
   for (const signup of signups) {
     const place = placeByTeam.get(signup.teamId!);
     const amount = place != null ? (pool[place] ?? 0) : 0;
@@ -132,37 +157,17 @@ export async function distributeMatchPrizes(matchId: number) {
   }
   if (recipients.length === 0) return { distributed: 0 };
 
-  await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
     const current = await tx.match.findUnique({
       where: { id: matchId },
       select: { prizeDistributed: true },
     });
-    if (!current || current.prizeDistributed) return;
-    for (const recipient of recipients) {
-      const label = PRIZE_PLACE_LABELS[recipient.place] ?? String(recipient.place);
-      await applyLedger(
-        tx,
-        recipient.userId,
-        recipient.amount,
-        'PRIZE_GRANT',
-        'PRIZE',
-        matchId,
-        label,
-      );
-      await tx.userNotification.create({
-        data: {
-          userId: recipient.userId,
-          type: 'PRIZE_GRANT',
-          title: '冠军池奖励',
-          content: `「${match.name}」你所在队伍获得「${label}」，已发放 ${recipient.amount} 冠军币`,
-        },
-      });
-    }
+    if (!current || current.prizeDistributed) return { distributed: 0 };
+    await awardPrizes(tx, match, recipients, '队伍');
     await tx.match.update({ where: { id: matchId }, data: { prizeDistributed: true } });
+    return { distributed: recipients.length };
   });
-
-  return { distributed: recipients.length };
 }
 
 /** 战队赛发放冠军池（幂等）：按 finalRank → 名次档给每位队员发对应金额。 */
@@ -189,7 +194,7 @@ export async function distributeSeasonPrizes(seasonId: number) {
     if (team.finalRank != null) placeByTeam.set(team.id, placeForFinalRank(team.finalRank));
   }
 
-  const recipients: { userId: number; amount: number; place: number }[] = [];
+  const recipients: PrizeRecipient[] = [];
   for (const member of members) {
     const place = placeByTeam.get(member.teamId);
     const amount = place != null ? (pool[place] ?? 0) : 0;
@@ -197,34 +202,15 @@ export async function distributeSeasonPrizes(seasonId: number) {
   }
   if (recipients.length === 0) return { distributed: 0 };
 
-  await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "TeamSeason" WHERE id = ${seasonId} FOR UPDATE`;
     const current = await tx.teamSeason.findUnique({
       where: { id: seasonId },
       select: { prizeDistributed: true },
     });
-    if (!current || current.prizeDistributed) return;
-    for (const recipient of recipients) {
-      const label = PRIZE_PLACE_LABELS[recipient.place] ?? String(recipient.place);
-      await applyLedger(
-        tx,
-        recipient.userId,
-        recipient.amount,
-        'PRIZE_GRANT',
-        'PRIZE',
-        seasonId,
-        label,
-      );
-      await tx.userNotification.create({
-        data: {
-          userId: recipient.userId,
-          type: 'PRIZE_GRANT',
-          title: '冠军池奖励',
-          content: `「${season.name}」你所在战队获得「${label}」，已发放 ${recipient.amount} 冠军币`,
-        },
-      });
-    }
+    if (!current || current.prizeDistributed) return { distributed: 0 };
+    await awardPrizes(tx, season, recipients, '战队');
     await tx.teamSeason.update({ where: { id: seasonId }, data: { prizeDistributed: true } });
+    return { distributed: recipients.length };
   });
-
-  return { distributed: recipients.length };
 }
