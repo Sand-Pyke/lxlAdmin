@@ -1,0 +1,998 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MatchStatus {
+  CREATED
+  LIVE
+  FINISHED
+}
+
+enum AccountStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MatchType {
+  REGULAR
+  TEAM_LEAGUE
+}
+
+enum SeasonStatus {
+  SIGNUPS
+  DRAFTING
+  POINTS
+  SWISS
+  PLAYOFFS
+  FINISHED
+}
+
+enum TeamMemberRole {
+  CAPTAIN
+  STARTER
+  SUB
+}
+
+enum TeamInviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum SeasonMatchPhase {
+  POINTS
+  SWISS
+  PLAYOFF
+}
+
+enum PlayoffStage {
+  SEMIFINAL
+  THIRD
+  FINAL
+  NIRVANA_SEMIFINAL
+}
+
+model User {
+  id                    Int                           @id @default(autoincrement())
+  username              String                        @unique @db.VarChar(24)
+  passwordHash          String
+  /// 是否管理员（普通管理员：可进入后台、管理普通用户，但受限操作仅核心管理员可做）。
+  isAdmin               Boolean                       @default(false)
+  /// 是否二级管理员（在普通管理员权限之上，额外可重置段位、处罚用户、取消报名）。
+  isSecondaryAdmin      Boolean                       @default(false)
+  /// 是否核心管理员（超级管理员：可操作后台任意按钮、调整其他账号的管理员权限）。
+  isCoreAdmin           Boolean                       @default(false)
+  status                AccountStatus                 @default(APPROVED)
+  /// 审核备注：目前只在用户申请修改段位时写入「-修改段位」。
+  reviewNote            String                        @default("")
+  /// 用户申请修改、等待审核的新段位；空串表示没有待审的段位变更。
+  pendingRank           String                        @default("")
+  kookName              String                        @default("")
+  backgroundImage       String                        @default("")
+  /// 当前佩戴的头像框 effect.value（如 "gold"）；空串表示未佩戴（初始状态）。
+  avatarFrame           String                        @default("")
+  /// 当前佩戴的头像框对应的背包记录 id：多款头像框独立佩戴时精确到具体一条。
+  avatarFrameInventoryId Int?
+  /// 当前佩戴的称号 effect.value（称号文本）；空串表示未佩戴（初始状态）。
+  title                 String                        @default("")
+  /// 当前佩戴的称号对应的背包记录 id：多款称号独立佩戴时精确到具体一条。
+  titleInventoryId      Int?
+  /// 当前报名铭牌对应的背包记录；仅未过期、未删除且属于本人的铭牌生效。
+  nameplateInventoryId  Int?
+  /// 核心管理员是否在选手卡片/排行榜等公开榜单中隐藏自己。
+  hiddenFromPlayers   Boolean                       @default(false)
+  importToken           String                        @unique @default(cuid())
+  /// 报名处罚截止时间：非空且晚于当前时间时禁止报名；null 表示未处罚。
+  banUntil              DateTime?
+  createdAt             DateTime                      @default(now())
+  updatedAt             DateTime                      @updatedAt
+  profile               PlayerProfile?
+  /// 绑定过的 Riot 账号（主号 / 小号 / 换号）。战绩导入按 puuid 或游戏ID 匹配到任意一个即可。
+  riotAccounts          PlayerAccount[]
+  signups               MatchSignup[]
+  gameRecords           MatchGameRecord[]
+  fmvpMatches           Match[]                       @relation("MatchFmvp")
+  matchesCreated        Match[]                       @relation("MatchCreator")
+  seasonMemberships     TeamSeasonMember[]
+  seasonSignups         TeamSeasonSignup[]
+  teamInvitesSent       TeamInvite[]                  @relation("TeamInviteFrom")
+  teamInvitesReceived   TeamInvite[]                  @relation("TeamInviteTo")
+  teamNotices           TeamNotice[]
+  teamNoticesRef        TeamNotice[]                  @relation("TeamNoticeRef")
+  applicationsSent      TeamApplication[]             @relation("TeamApplicationFrom")
+  applicationsReceived  TeamApplication[]             @relation("TeamApplicationTo")
+  matchSubstitutionsOut TeamSeasonMatchSubstitution[] @relation("SeasonMatchSubstitutionStarter")
+  matchSubstitutionsIn  TeamSeasonMatchSubstitution[] @relation("SeasonMatchSubstitutionSubstitute")
+  heroProtectionCards   HeroProtectionCard[]
+  heroProtections       MatchHeroProtection[]
+  auctionLots          AuctionDraftLot[]
+  auctionPicks         AuctionDraftPick[]
+
+  @@index([status])
+}
+
+model PlayerProfile {
+  id             Int     @id @default(autoincrement())
+  userId         Int     @unique
+  name           String
+  /// 游戏ID（召唤师名，格式 名称#编号）。名称可重复、数字编号也可重复，
+  /// 但「名称#编号」整体必须全局唯一（不区分大小写），
+  /// 由迁移 202609290001 对 lower(gameName) 的唯一索引保证；空串「未设置」不参与约束。
+  gameName       String
+  mainPosition   String  @default("FILL")
+  subPosition    String  @default("FILL")
+  rank           String  @default("")
+  bio            String  @default("")
+  avatar         String  @default("")
+  /// 自选常用英雄（最多 3 个，逗号分隔的英雄名，与战绩推导出的英雄榜分开存）。
+  favoriteHeroes String  @default("")
+  /// Riot 账号唯一标识（LCU /lol-summoner/v1/current-summoner 的 puuid）。
+  /// 昵称可改、Riot ID 格式也变过，只有 puuid 能稳定地把战绩对到人。
+  puuid          String? @unique
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// 选手绑定过的 Riot 账号。
+/// 换号后老账号不会被顶掉：战绩导入按 puuid / 游戏ID 命中任意一条绑定即可；
+/// puuid 全局唯一，避免同一个 Riot 账号被两个站内账号同时认领。
+model PlayerAccount {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  puuid     String   @unique
+  /// 游戏ID（名称#编号），仅用于按名字匹配与展示；导入时会顺手更新。
+  gameName  String   @default("")
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([gameName])
+}
+
+model Match {
+  id               Int               @id @default(autoincrement())
+  name             String
+  /// 赛事类型：REGULAR 走原有单败链路；TEAM_LEAGUE 走战队赛赛季域（TeamSeason）。
+  type             MatchType         @default(REGULAR)
+  /// 赛事排期时间：可选，设置后展示在首页「今日赛事」；未设置为空。
+  date             DateTime?
+  status           MatchStatus       @default(CREATED)
+  /// 基础信息里的状态一旦手动修改，就不再允许再次修改。
+  statusLocked     Boolean           @default(false)
+  /// 是否至少有一轮已经完成战果录入并结束，用于开放今日 FMVP 选择。
+  roundEnded       Boolean           @default(false)
+  bo               String            @default("BO3")
+  playerCount      Int               @default(0)
+  teamCount        Int               @default(2)
+  blueTeam         String            @default("蓝色方")
+  redTeam          String            @default("红色方")
+  blueScore        Int               @default(0)
+  redScore         Int               @default(0)
+  round            String            @default("常规赛")
+  liveUrl          String            @default("")
+  useFee           Boolean           @default(true)
+  /// 本场队长报名分路；空串沿用首位入队者为队长。
+  captainPosition  String            @default("")
+  /// 队长就位后，首轮选人全部完成时置为 true。
+  feeCardFirstRoundDone Boolean       @default(false)
+  recordsConfirmed Boolean           @default(false)
+  currentRound     Int               @default(1)
+  /// LCU 自动导入的目标赛事：管理员在后台点选，agent 的导入上下文据此定位写入目标。
+  importTarget     Boolean           @default(false)
+  teamOneId        Int?
+  teamTwoId        Int?
+  championTeamId   Int?
+  runnerupTeamId   Int?
+  /// 冠军池配置（JSON）：名次档（1冠军/2亚军/4四强/8八强/16十六强…）→ 每人冠军币，开赛前可改。
+  prizePoolJson    String           @default("")
+  /// 冠军池是否已发放（幂等标记）。
+  prizeDistributed Boolean          @default(false)
+  /// 今日 FMVP：仅从本场冠军队伍的正式参赛选手中选择。
+  fmvpUserId       Int?
+  createdById      Int?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  signups          MatchSignup[]
+  teams            Team[]
+  teamOne          Team?             @relation("MatchTeamOne", fields: [teamOneId], references: [id], onDelete: SetNull)
+  teamTwo          Team?             @relation("MatchTeamTwo", fields: [teamTwoId], references: [id], onDelete: SetNull)
+  fmvpUser         User?             @relation("MatchFmvp", fields: [fmvpUserId], references: [id], onDelete: SetNull)
+  createdBy        User?             @relation("MatchCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  heroProtectionAwards HeroProtectionCard[]  @relation("HeroCardAwardMatch")
+  heroProtectionUses   HeroProtectionCard[]  @relation("HeroCardUseMatch")
+  heroProtections      MatchHeroProtection[]
+  rounds           MatchRound[]
+  scores           MatchScore[]
+  gameRecords      MatchGameRecord[]
+  auctionDraft     AuctionDraft?
+  feeCardUses      MatchFeeCardUse[]
+  allInCardUses    MatchAllInCardUse[]
+
+  @@index([createdAt])
+  @@index([createdById])
+}
+
+model HeroProtectionCard {
+  id            Int                  @id @default(autoincrement())
+  ownerId       Int
+  sourceMatchId Int?
+  usedMatchId   Int?
+  awardType     String
+  consumedAt    DateTime?
+  createdAt     DateTime             @default(now())
+  owner         User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  sourceMatch   Match?               @relation("HeroCardAwardMatch", fields: [sourceMatchId], references: [id], onDelete: SetNull)
+  usedMatch     Match?               @relation("HeroCardUseMatch", fields: [usedMatchId], references: [id], onDelete: SetNull)
+  protection    MatchHeroProtection?
+
+  @@unique([ownerId, sourceMatchId, awardType])
+  @@index([ownerId, consumedAt])
+}
+
+model MatchHeroProtection {
+  id        Int                @id @default(autoincrement())
+  matchId   Int
+  roundNo   Int                @default(1)
+  teamId    Int
+  ownerId   Int
+  cardId    Int                @unique
+  heroName  String
+  createdAt DateTime           @default(now())
+  match     Match              @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  team      Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  owner     User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  card      HeroProtectionCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, roundNo, teamId])
+  @@index([ownerId])
+}
+
+enum AuctionStatus {
+  SETUP
+  AUCTIONING
+  FINISHED
+}
+
+enum AuctionLotStatus {
+  PENDING
+  AUCTIONING
+  SOLD
+  PASSED
+  ASSIGNED
+}
+
+/// 大屏选人 2.0：一场赛事的拍卖选人配置与状态。
+model AuctionDraft {
+  id                Int               @id @default(autoincrement())
+  matchId           Int               @unique
+  budgetPerTeam     Int               @default(100)
+  minBidIncrement   Int               @default(1)
+  auctionDurationSec Int              @default(20)
+  extendSec         Int               @default(5)
+  teamSize          Int               @default(5)
+  status            AuctionStatus     @default(SETUP)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  match             Match             @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  lots              AuctionDraftLot[]
+  picks             AuctionDraftPick[]
+}
+
+/// 拍卖队列：每个待拍选手一条。
+model AuctionDraftLot {
+  id             Int              @id @default(autoincrement())
+  auctionDraftId Int
+  userId         Int
+  sortOrder      Int              @default(0)
+  reservePrice   Int              @default(1)
+  status         AuctionLotStatus @default(PENDING)
+  startedAt      DateTime?
+  endsAt         DateTime?
+  auctionDraft   AuctionDraft     @relation(fields: [auctionDraftId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bids           AuctionDraftBid[]
+
+  @@unique([auctionDraftId, userId])
+  @@index([auctionDraftId, sortOrder])
+}
+
+/// 出价日志（只追加）。
+model AuctionDraftBid {
+  id        Int             @id @default(autoincrement())
+  lotId     Int
+  teamId    Int
+  amount    Int
+  createdAt DateTime        @default(now())
+  lot       AuctionDraftLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  team      Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([lotId])
+}
+
+/// 成交记录（拍卖结果）。
+model AuctionDraftPick {
+  id             Int          @id @default(autoincrement())
+  auctionDraftId Int
+  teamId         Int
+  userId         Int
+  price          Int
+  roundNo        Int          @default(0)
+  createdAt      DateTime     @default(now())
+  auctionDraft   AuctionDraft @relation(fields: [auctionDraftId], references: [id], onDelete: Cascade)
+  team           Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([auctionDraftId, userId])
+  @@index([auctionDraftId, teamId])
+}
+
+model MatchSignup {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  matchId        Int
+  displayName    String   @default("")
+  mainPosition   String   @default("FILL")
+  subPosition    String   @default("FILL")
+  rankAtSignup   String   @default("")
+  canSubstitute  Boolean  @default(false)
+  /// Signup is in the waitlist and is promoted when a player in the same position cancels.
+  isWaitlisted   Boolean  @default(false)
+  /// Remembers that an assigned player came from the waitlist, so returning them to the pool restores waitlist status.
+  waitlistOrigin Boolean  @default(false)
+  positionOrder  Int      @default(0)
+  teamPosition   String   @default("")
+  /// 参赛宣言：报名时填写，最多 50 字，可留空。
+  declaration    String   @default("")
+  captainTeamName String @default("")
+  captainTeamLogo String @default("")
+  ownedTeam      Team? @relation("CaptainTeam")
+  /// 每队首位选入的选手。队长离队时会自动指定当前队内最早选入的成员接任。
+  isCaptain      Boolean  @default(false)
+  feeCardInventoryId Int? @unique
+  feeCardInventory UserInventory? @relation(fields: [feeCardInventoryId], references: [id], onDelete: Restrict)
+  teamId         Int?
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  match          Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  team           Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, matchId])
+  @@index([matchId])
+  @@index([teamId])
+}
+
+model Team {
+  id           Int               @id @default(autoincrement())
+  matchId      Int
+  name         String
+  logo         String @default("")
+  captainSignupId Int? @unique
+  captainSignup MatchSignup? @relation("CaptainTeam", fields: [captainSignupId], references: [id], onDelete: SetNull)
+  /// 队伍顺位（决定对战配对顺序，越小越靠前）；由后台拖拽/重排持久化。
+  sortOrder    Int               @default(0)
+  /// 选人顺位（独立于对战顺位）：首轮沿用建队顺序，后续轮次按剩余预算和首位成员段位自动重排。
+  draftOrder   Int               @default(0)
+  createdAt    DateTime          @default(now())
+  match        Match             @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  signups      MatchSignup[]
+  roundsAsOne  MatchRound[]      @relation("RoundTeamOne")
+  roundsAsTwo  MatchRound[]      @relation("RoundTeamTwo")
+  scoresAsOne  MatchScore[]      @relation("ScoreTeamOne")
+  scoresAsTwo  MatchScore[]      @relation("ScoreTeamTwo")
+  gameRecords  MatchGameRecord[]
+  heroProtections MatchHeroProtection[]
+  matchesAsOne Match[]           @relation("MatchTeamOne")
+  matchesAsTwo Match[]           @relation("MatchTeamTwo")
+  auctionBids  AuctionDraftBid[]
+  auctionPicks AuctionDraftPick[]
+
+  @@unique([matchId, name])
+  @@index([matchId])
+}
+
+model MatchRound {
+  id        Int      @id @default(autoincrement())
+  matchId   Int
+  roundNo   Int      @default(1)
+  teamOneId Int
+  teamTwoId Int
+  createdAt DateTime @default(now())
+  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  teamOne   Team     @relation("RoundTeamOne", fields: [teamOneId], references: [id], onDelete: Cascade)
+  teamTwo   Team     @relation("RoundTeamTwo", fields: [teamTwoId], references: [id], onDelete: Cascade)
+
+  @@index([matchId, roundNo])
+}
+
+model MatchScore {
+  id        Int      @id @default(autoincrement())
+  matchId   Int
+  roundNo   Int      @default(1)
+  teamOneId Int
+  teamTwoId Int
+  scoreOne  Int      @default(0)
+  scoreTwo  Int      @default(0)
+  updatedAt DateTime @updatedAt
+  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  teamOne   Team     @relation("ScoreTeamOne", fields: [teamOneId], references: [id], onDelete: Cascade)
+  teamTwo   Team     @relation("ScoreTeamTwo", fields: [teamTwoId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, roundNo, teamOneId, teamTwoId])
+  @@index([matchId, roundNo])
+}
+
+model MatchGameRecord {
+  id                Int              @id @default(autoincrement())
+  userId            Int
+  matchId           Int?
+  teamId            Int?
+  /// 战队赛：指向所属战队赛场次（TeamSeasonMatch）；常规赛战绩为 null。
+  seasonMatchId     Int?
+  champion          String
+  result            String
+  kills             Int              @default(0)
+  deaths            Int              @default(0)
+  assists           Int              @default(0)
+  isMvp             Boolean          @default(false)
+  isSvp             Boolean          @default(false)
+  teamRank          Int              @default(0)
+  level             Int?             @default(0)
+  cs                Int?             @default(0)
+  gold              Int?             @default(0)
+  vision            Int?             @default(0)
+  damageToChampions Int?             @default(0)
+  /// 截图来源及未显示的字段；不保存原图、模型密钥或虚构的游戏账号标识。
+  screenshotMeta    Json?
+  items             String           @default("")
+  /// 该局实际分配的位置；与报名位置分开保存，避免后续换位改写历史战绩。
+  teamPosition      String           @default("")
+  gameNo            Int              @default(1)
+  roundNo           Int              @default(1)
+  playedAt          DateTime?
+  createdAt         DateTime         @default(now())
+  /// 来源对局 ID（LCU gameId，或带 screenshot: 前缀的截图批次摘要）。手工录入为 null；
+  /// Postgres 的唯一索引把多个 NULL 视为互不相同，因此手工录入不会互相冲突。
+  sourceGameId      String?
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  match             Match?           @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  team              Team?            @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  seasonMatch       TeamSeasonMatch? @relation(fields: [seasonMatchId], references: [id], onDelete: SetNull)
+
+  /// 同一局里一个玩家只能有一条记录，自动导入靠它做 upsert。
+  @@unique([sourceGameId, userId])
+  @@index([matchId, roundNo, gameNo])
+  @@index([userId, playedAt])
+}
+
+/// 队长自助导入记录：校验、正式战绩写入及状态更新在同一事务完成。
+model CommunityGameImport {
+  id              Int       @id @default(autoincrement())
+  sourceKey       String    @unique
+  gameId          String
+  platformId      String
+  submittedById   Int
+  matchId         Int?
+  seasonMatchId   Int?
+  roundNo         Int
+  teamOneId       Int
+  teamTwoId       Int
+  gameNo          Int
+  slotKey         String?   @unique
+  targetName      String
+  payload         Json
+  mapping         Json
+  rosterHash      String
+  audit           Json      @default("[]")
+  captainOneId    Int
+  captainTwoId    Int
+  /// IMPORTED 为已导入；PENDING / REJECTED 兼容历史待处理记录，新提交校验通过后直接置为 IMPORTED。
+  status          String    @default("PENDING")
+  revision        Int       @default(1)
+  reviewNote      String    @default("")
+  /// 兼容历史字段，当前记录最后处理/导入人，不再代表管理员审批。
+  reviewedById    Int?
+  importedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([submittedById, createdAt])
+  @@index([captainOneId, status])
+  @@index([captainTwoId, status])
+}
+
+model CommunityComment {
+  id        Int                @id @default(autoincrement())
+  content   String             @db.VarChar(500)
+  createdAt DateTime           @default(now())
+  parentId  Int?
+  parent    CommunityComment?  @relation("CommunityReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  comments  CommunityComment[] @relation("CommunityReplies")
+
+  @@index([createdAt])
+  @@index([parentId])
+}
+
+model Video {
+  id          Int      @id @default(autoincrement())
+  title       String   @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  objectKey   String   @unique
+  mimeType    String   @db.VarChar(64)
+  size        Int
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// 战队赛：一次性周赛（周一/三积分赛 + 周六淘汰赛出周冠军）。
+model TeamSeason {
+  id           Int                @id @default(autoincrement())
+  name         String
+  status       SeasonStatus       @default(DRAFTING)
+  /// 该周周五（积分赛首日，赛程以此为基准生成周五/周六 19:30）。
+  startDate    DateTime?
+  /// 冠军池配置（JSON）：名次档（1冠军/2亚军/4四强/8八强）→ 每人冠军币，开赛前可改。
+  prizePoolJson    String           @default("")
+  /// 冠军池是否已发放（幂等标记）。
+  prizeDistributed Boolean          @default(false)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  teams        TeamSeasonTeam[]
+  matches      TeamSeasonMatch[]
+  signups      TeamSeasonSignup[]
+  invites      TeamInvite[]
+  notices      TeamNotice[]
+  applications TeamApplication[]
+
+  @@index([status])
+}
+
+model TeamSeasonTeam {
+  id                 Int                           @id @default(autoincrement())
+  seasonId           Int
+  /// 队名（简称与 logo 用于大屏展示）。
+  name               String
+  abbr               String                        @default("")
+  logo               String                        @default("")
+  sortOrder          Int                           @default(0)
+  /// 分组：空 = 未分组；APEX = 登峰组；NIRVANA = 涅槃组。
+  division           String                        @default("")
+  /// 最终名次：1=周冠军、2=亚军…… 淘汰赛结束后写入。
+  finalRank          Int?
+  createdAt          DateTime                      @default(now())
+  season             TeamSeason                    @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  members            TeamSeasonMember[]
+  matchSubstitutions TeamSeasonMatchSubstitution[]
+  invites            TeamInvite[]
+  notices            TeamNotice[]
+  applications       TeamApplication[]
+  matchesAsOne       TeamSeasonMatch[]             @relation("SeasonMatchOne")
+  matchesAsTwo       TeamSeasonMatch[]             @relation("SeasonMatchTwo")
+
+  @@unique([seasonId, name])
+  @@index([seasonId])
+}
+
+model TeamSeasonMember {
+  id        Int            @id @default(autoincrement())
+  teamId    Int
+  userId    Int
+  /// 队长 / 首发 / 替补。锁定名单后不再变动（特殊情况可强制解锁）。
+  role      TeamMemberRole @default(STARTER)
+  position  String         @default("FILL")
+  createdAt DateTime       @default(now())
+  team      TeamSeasonTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+/// 战队赛报名：赛季报名阶段选手自选分路，不限人数（复用常规赛报名交互，去掉名额/候补限制）。
+model TeamSeasonSignup {
+  id           Int        @id @default(autoincrement())
+  seasonId     Int
+  userId       Int
+  mainPosition String     @default("FILL")
+  /// 参赛宣言：报名时填写，最多 50 字，可留空。
+  declaration  String     @default("")
+  createdAt    DateTime   @default(now())
+  season       TeamSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, userId])
+  @@index([seasonId])
+}
+
+/// 队长向已报名选手发出的入队邀请；处理结果保留给队长回看。
+/// 通知中心：readBy* 记当前用户已读时间，hiddenBy* 记当前用户是否删除该通知。
+model TeamInvite {
+  id           Int              @id @default(autoincrement())
+  seasonId     Int
+  teamId       Int
+  fromUserId   Int
+  toUserId     Int
+  role         TeamMemberRole   @default(STARTER)
+  status       TeamInviteStatus @default(PENDING)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  readByToAt   DateTime?
+  readByFromAt DateTime?
+  hiddenByTo   Boolean          @default(false)
+  hiddenByFrom Boolean          @default(false)
+  season       TeamSeason       @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  team         TeamSeasonTeam   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  fromUser     User             @relation("TeamInviteFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser       User             @relation("TeamInviteTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([seasonId, toUserId])
+  @@index([teamId, status])
+}
+
+/// 战队赛通知：队员离开队伍等事件推送给队长，与邀请通知在通知中心并列展示。
+model TeamNotice {
+  id        Int            @id @default(autoincrement())
+  userId    Int
+  seasonId  Int
+  teamId    Int
+  /// 通知类型：目前固定为 MEMBER_LEFT（队员离开队伍）。
+  type      String         @default("MEMBER_LEFT")
+  /// 关联用户：离开队伍的队员。
+  refUserId Int
+  readAt    DateTime?
+  hidden    Boolean        @default(false)
+  createdAt DateTime       @default(now())
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  season    TeamSeason     @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  team      TeamSeasonTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  refUser   User           @relation("TeamNoticeRef", fields: [refUserId], references: [id], onDelete: Cascade)
+
+  @@index([userId, hidden])
+  @@index([userId, readAt])
+}
+
+/// 选手向队长发起的入队申请；队长通过/拒绝后结果返回给选手。
+/// 通知中心：readBy* 记当前用户已读时间，hiddenBy* 记当前用户是否删除该通知。
+model TeamApplication {
+  id           Int              @id @default(autoincrement())
+  seasonId     Int
+  teamId       Int
+  fromUserId   Int
+  toUserId     Int
+  role         TeamMemberRole   @default(STARTER)
+  /// 申请时选择的位置（首发需选；替补沿用报名主位置）。FILL 表示未指定。
+  position     String           @default("FILL")
+  status       TeamInviteStatus @default(PENDING)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  readByToAt   DateTime?
+  readByFromAt DateTime?
+  hiddenByTo   Boolean          @default(false)
+  hiddenByFrom Boolean          @default(false)
+  season       TeamSeason       @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  team         TeamSeasonTeam   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  fromUser     User             @relation("TeamApplicationFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser       User             @relation("TeamApplicationTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([seasonId, fromUserId])
+  @@index([teamId, status])
+}
+
+model TeamSeasonMatch {
+  id               Int                           @id @default(autoincrement())
+  seasonId         Int
+  /// 积分赛 / 淘汰赛。
+  phase            SeasonMatchPhase              @default(POINTS)
+  /// 5=周五 6=周六 0=周日。
+  dayOfWeek        Int                           @default(1)
+  /// 当天第几轮（同一天每队打 2 场时区分先后）。
+  roundNo          Int                           @default(1)
+  /// 同一开赛时间内的显示顺序，可单独调整同轮比赛顺序。
+  scheduleOrder    Int                           @default(0)
+  bo               String                        @default("BO3")
+  /// LCU 自动导入目标（与常规赛 Match.importTarget 互斥，同一时间只能有一个导入目标）。
+  importTarget     Boolean                       @default(false)
+  /// 淘汰赛层级：半决赛 / 决赛；积分赛为 null。
+  stage            PlayoffStage?
+  scheduledAt      DateTime
+  status           MatchStatus                   @default(CREATED)
+  /// 战绩是否已确认：确认后小局战绩锁定，不能再编辑/删除。
+  recordsConfirmed Boolean                       @default(false)
+  teamOneId        Int
+  teamTwoId        Int
+  scoreOne         Int                           @default(0)
+  scoreTwo         Int                           @default(0)
+  createdAt        DateTime                      @default(now())
+  updatedAt        DateTime                      @updatedAt
+  season           TeamSeason                    @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  teamOne          TeamSeasonTeam                @relation("SeasonMatchOne", fields: [teamOneId], references: [id], onDelete: Cascade)
+  teamTwo          TeamSeasonTeam                @relation("SeasonMatchTwo", fields: [teamTwoId], references: [id], onDelete: Cascade)
+  records          MatchGameRecord[]
+  substitutions    TeamSeasonMatchSubstitution[]
+
+  @@index([seasonId, phase, dayOfWeek])
+  @@index([seasonId, status])
+}
+
+/// 单场战队赛的替补调整，不改变队伍在其他场次的默认名单。
+model TeamSeasonMatchSubstitution {
+  id               Int             @id @default(autoincrement())
+  matchId          Int
+  teamId           Int
+  starterUserId    Int
+  substituteUserId Int
+  /// 替补上场后占用的首发位置。
+  position         String
+  match            TeamSeasonMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  team             TeamSeasonTeam  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  starter          User            @relation("SeasonMatchSubstitutionStarter", fields: [starterUserId], references: [id], onDelete: Cascade)
+  substitute       User            @relation("SeasonMatchSubstitutionSubstitute", fields: [substituteUserId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, starterUserId])
+  @@unique([matchId, substituteUserId])
+}
+
+// ===== 冠军币竞猜系统 =====
+
+enum MarketStatus {
+  OPEN
+  CLOSED
+  SETTLED
+  VOID
+}
+
+enum BetStatus {
+  OPEN
+  WON
+  LOST
+  REFUNDED
+}
+
+/// 冠军币钱包：余额 = 流水求和，可对账。
+model PointWallet {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @unique
+  balance     Int      @default(0)
+  totalEarned Int      @default(0)
+  totalSpent  Int      @default(0)
+  updatedAt   DateTime @updatedAt
+}
+
+/// 冠军币流水（只追加）：余额变动一律落一条，balanceAfter 为变动后余额。
+model PointTransaction {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  amount       Int
+  type         String
+  refType      String   @default("")
+  refId        Int?
+  balanceAfter Int
+  note         String   @default("")
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([type])
+}
+
+/// 每日签到：一天一次，金额为 5 的倍数（10~100）。
+model DailyCheckin {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  date      String
+  amount    Int
+  createdAt DateTime @default(now())
+
+  @@unique([userId, date])
+}
+
+/// 新手礼包：限量 50 份，先到先得，截止 2026/11/3 12:00。
+model SignupBonusClaim {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  amount    Int
+  createdAt DateTime @default(now())
+}
+
+/// 盘口：一场赛事的竞猜市场。
+/// marketKind = MATCH_WIN 表示「大场胜负」（整场 BO 系列，roundNo 为空）；
+/// marketKind = GAME_WIN 表示「小场胜负」（BO 系列中的某一局，roundNo 为局次）。
+model MatchMarket {
+  id             Int          @id @default(autoincrement())
+  marketKind     String       @default("MATCH_WIN")
+  /// 常规赛 Match.id（常规赛盘口）。
+  matchId        Int?
+  /// 战队赛 TeamSeasonMatch.id（战队赛盘口）。
+  seasonMatchId  Int?
+  /// 小场局次：GAME_WIN 盘口必填（1..N），MATCH_WIN 盘口为空。
+  roundNo        Int?
+  /// 常规赛淘汰赛轮次，与 roundNo（单局局号）分开，防止同队再次交手时串盘。
+  matchRoundNo   Int?
+  /// 常规赛对阵双方（Team.id）：六队/八队淘汰赛一场里有多个对阵，盘口按对阵区分。战队赛盘口为空。
+  teamOneId      Int?
+  teamTwoId      Int?
+  status         MarketStatus @default(OPEN)
+  returnRate     Float        @default(0.9)
+  sigma          Float        @default(8)
+  minStake       Int          @default(10)
+  maxStake       Int          @default(200)
+  perUserCap     Int          @default(200)
+  bettingOpenAt  DateTime?
+  bettingCloseAt DateTime
+  settledAt      DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([matchId, marketKind, roundNo])
+  @@index([matchId, teamOneId, teamTwoId])
+  @@index([seasonMatchId, marketKind])
+  @@index([status])
+}
+
+/// 盘口选项：胜负盘固定两档 TEAM_ONE_WIN / TEAM_TWO_WIN。
+model MarketOutcome {
+  id             Int      @id @default(autoincrement())
+  marketId       Int
+  outcomeKey     String
+  label          String   @default("")
+  prob           Float    @default(0.5)
+  odds           Float    @default(1.8)
+  manualOverride Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([marketId, outcomeKey])
+  @@index([marketId])
+}
+
+/// 投注单：oddsAtBet 为下单时快照赔率，结算按它派彩。
+model Bet {
+  id              Int       @id @default(autoincrement())
+  userId          Int
+  marketId        Int
+  outcomeId       Int
+  stake           Int
+  oddsAtBet       Float
+  potentialPayout Int
+  status          BetStatus @default(OPEN)
+  settledPayout   Int       @default(0)
+  createdAt       DateTime  @default(now())
+  settledAt       DateTime?
+
+  @@index([userId, createdAt])
+  @@index([marketId, status])
+  @@index([outcomeId])
+}
+
+/// 商城道具。
+model ShopItem {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String
+  /// 固定分类：AVATAR_FRAME=头像框 / TITLE=称号 / NAMEPLATE=报名铭牌 / BACKGROUND=背景 / THEME=主题 / ITEM_CARD=道具卡。
+  category    String   @default("ITEM_CARD")
+  /// 商品图标：emoji 或图片 URL（为空时不显示图标）。
+  icon        String   @default("")
+  description String   @default("")
+  price       Int
+  /// null 表示不限库存。
+  stock       Int?
+  enabled     Boolean  @default(true)
+  /// HERO_PROTECTION_CARD=直接发免ban卡；DECORATION=入背包装扮。
+  effectType  String   @default("DECORATION")
+  effectJson  String   @default("{}")
+  /// 有效期天数：null 表示永久（消耗类道具忽略此字段）。
+  durationDays Int?
+  /// 软删除：管理员删除后不再展示/出售，但保留记录以不影响用户已购背包。
+  deleted     Boolean @default(false)
+  /// 同类装扮分组：同组只能持有一件未过期的（用于不同时长档位去重）。
+  groupCode    String   @default("")
+  /// 领取资格：仅注册名次（User.id 递增顺序）落在 [min, max] 内的选手可领取；null 表示该侧不限。
+  eligibleMinUserId Int?
+  eligibleMaxUserId Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  inventories  UserInventory[]
+
+  @@index([groupCode])
+}
+
+/// 商城订单。
+model ShopOrder {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  itemId    Int
+  price     Int
+  /// 购买时的原价快照，折扣不影响梭哈卡的奖励基数。
+  originalPrice Int?
+  status    String   @default("SUCCESS")
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+/// 背包（装扮类道具实例）。
+model UserInventory {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  itemId    Int
+  orderId   Int?
+  status    String   @default("UNUSED")
+  /// 到期时间：null 表示永久；过期后视为失效（由查询端过滤）。
+  expiresAt DateTime?
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  item      ShopItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  feeCardSignup MatchSignup?
+  feeCardUse MatchFeeCardUse?
+  allInCardUse MatchAllInCardUse?
+
+  @@index([userId, status])
+  @@index([itemId])
+  @@index([userId, expiresAt])
+}
+
+/// 降费卡在赛事内的消耗凭证；取消报名不删除，仅删除赛事时退卡。
+model MatchFeeCardUse {
+  id          Int      @id @default(autoincrement())
+  matchId     Int
+  userId      Int
+  inventoryId Int      @unique
+  createdAt   DateTime @default(now())
+  match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  inventory   UserInventory @relation(fields: [inventoryId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, matchId])
+  @@index([matchId])
+}
+
+/// 梭哈卡绑定使用时的队伍与购买价，结算凭证与唯一约束防止重复领取。
+model MatchAllInCardUse {
+  id          Int @id @default(autoincrement())
+  matchId     Int
+  userId      Int
+  inventoryId Int @unique
+  teamId      Int
+  teamName    String
+  purchasePrice Int
+  reward      Int
+  status      String @default("PENDING")
+  payout      Int @default(0)
+  createdAt   DateTime @default(now())
+  settledAt   DateTime?
+  match       Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  inventory   UserInventory @relation(fields: [inventoryId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, matchId])
+  @@index([matchId, status])
+}
+
+/// 系统通知（充值到账等）：与战队赛邀请/申请/离队通知并列在通知中心展示。
+model UserNotification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  /// POINT_RECHARGE=充值到账；后续可扩展其他系统通知类型。
+  type      String   @default("SYSTEM")
+  title     String
+  content   String
+  readAt    DateTime?
+  hidden    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, hidden])
+  @@index([userId, readAt])
+}
+
+/// 赞助榜：核心管理员从选手库里挑选赞助人并录入金额，普通用户只读展示。
+model Sponsor {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  /// 赞助金额（元），保留两位小数；榜单按金额从高到低展示。
+  amount    Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

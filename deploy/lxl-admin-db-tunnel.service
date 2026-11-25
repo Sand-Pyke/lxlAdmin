@@ -1,0 +1,19 @@
+[Unit]
+Description=Private SSH database channel for LXL management
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=lxl-admin
+Group=lxl-admin
+ExecStart=/usr/bin/ssh -N -T -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/var/lib/lxl-admin-tunnel/known_hosts -i /var/lib/lxl-admin-tunnel/id_ed25519 -L 127.0.0.1:15432:127.0.0.1:15432 admin@8.220.222.136
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

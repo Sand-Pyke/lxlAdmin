@@ -8,6 +8,10 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "dev:api": "npm --prefix backend run dev",
+    "build:api": "npm --prefix backend run build",
+    "start:api": "npm --prefix backend run start",
+    "test:api": "npm --prefix backend test",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "preview": "vite preview --host 127.0.0.1",

@@ -1,0 +1,734 @@
+{
+  "sourceRepository": "lxlleague",
+  "sourceCommit": "38db40048211d5ac7af5e39eddf5ddebff836003",
+  "routes": [
+    "api/admin/community/[id]",
+    "api/admin/draft/music",
+    "api/admin/markets/open",
+    "api/admin/markets",
+    "api/admin/markets/[id]/bets",
+    "api/admin/markets/[id]/close",
+    "api/admin/markets/[id]/settle",
+    "api/admin/markets/[id]/void",
+    "api/admin/match/create",
+    "api/admin/match/delete/[id]",
+    "api/admin/match/finish/[id]",
+    "api/admin/match/finish_pick/[id]",
+    "api/admin/match/fmvp/[id]",
+    "api/admin/match/live/[id]",
+    "api/admin/match/prize/[id]",
+    "api/admin/match/round/end/[id]",
+    "api/admin/match/score",
+    "api/admin/match/set_bo/[id]",
+    "api/admin/match/set_fee/[id]",
+    "api/admin/match/status/[id]",
+    "api/admin/match/update/[id]",
+    "api/admin/permissions",
+    "api/admin/pick/[id]/discard",
+    "api/admin/pick/[id]",
+    "api/admin/points/adjust",
+    "api/admin/points/recharge",
+    "api/admin/season/board/[id]",
+    "api/admin/season/create",
+    "api/admin/season/delete",
+    "api/admin/season/final",
+    "api/admin/season/group",
+    "api/admin/season/list",
+    "api/admin/season/lock",
+    "api/admin/season/match/finish",
+    "api/admin/season/match/lineup",
+    "api/admin/season/match/reschedule",
+    "api/admin/season/match/reset",
+    "api/admin/season/match/swap-schedule",
+    "api/admin/season/member/assign",
+    "api/admin/season/member/remove",
+    "api/admin/season/nirvana-pairing",
+    "api/admin/season/nirvana-playoffs",
+    "api/admin/season/playoffs",
+    "api/admin/season/prize/[id]",
+    "api/admin/season/reschedule",
+    "api/admin/season/swiss/advance",
+    "api/admin/season/swiss/start",
+    "api/admin/season/team/create",
+    "api/admin/season/team/delete",
+    "api/admin/season/team/group",
+    "api/admin/season/team/update",
+    "api/admin/shop/create",
+    "api/admin/shop",
+    "api/admin/shop/upload-icon",
+    "api/admin/shop/[id]",
+    "api/admin/sign/cancel/[id]",
+    "api/admin/sign/list",
+    "api/admin/sign/position/[id]",
+    "api/admin/sponsors",
+    "api/admin/sponsors/[id]",
+    "api/admin/team/assign",
+    "api/admin/team/auto_assign",
+    "api/admin/team/clear_assignments",
+    "api/admin/team/create",
+    "api/admin/team/delete/[id]",
+    "api/admin/team/logo/upload",
+    "api/admin/team/move",
+    "api/admin/team/reorder",
+    "api/admin/teams/[id]",
+    "api/admin/users/admin",
+    "api/admin/users/ban",
+    "api/admin/users/batch-approve",
+    "api/admin/users/delete/[id]",
+    "api/admin/users/game_name",
+    "api/admin/users/password",
+    "api/admin/users/rank",
+    "api/admin/users/records/[id]",
+    "api/admin/users",
+    "api/admin/users/status",
+    "api/admin/users/unban",
+    "api/admin/videos",
+    "api/admin/videos/upload/chunk",
+    "api/admin/videos/upload/complete",
+    "api/admin/videos/upload/init",
+    "api/admin/videos/upload/status",
+    "api/admin/videos/[id]",
+    "api/login",
+    "api/logout",
+    "api/current_user",
+    "api/user/change_pwd",
+    "api/match/list",
+    "api/sponsors",
+    "api/health"
+  ],
+  "retired": ["/api/admin/auction/**"],
+  "files": [
+    {
+      "path": "src/app/api/admin/community/[id]/route.ts",
+      "sourceSha256": "e20c3179309a303df3de2c6ff6e2dd7c7dcaa0bb94f9265a45cf5656d341a389"
+    },
+    {
+      "path": "src/server/api.ts",
+      "sourceSha256": "9200fb7c58265ea3cbaa4ef40c11ee7f64714fb1250e129e2851eaa81cab2f81"
+    },
+    {
+      "path": "src/server/auth.ts",
+      "sourceSha256": "be6d91dda6b3a33bdec7b4eda50d9199afcec1f76710b0bc3243ed8b010f9312"
+    },
+    {
+      "path": "src/lib/admin-options.ts",
+      "sourceSha256": "027bd22e0a09cad57228507c4406778535510794454f1631a177f7225759fe01"
+    },
+    {
+      "path": "src/lib/credentials.ts",
+      "sourceSha256": "3bf2920cfae7dd0ddaf6e47ded74de687e7f69f376225524e8245b43b3ec6c64"
+    },
+    {
+      "path": "src/lib/default-avatars.ts",
+      "sourceSha256": "c79c6af861e17350769c993cf904f00791a0ecb946eeaa77f5536b181c25ade7"
+    },
+    {
+      "path": "src/lib/game-name.ts",
+      "sourceSha256": "436cc8851ad5892096c8a306bd7a7447689f69ffc4818869f85fa5a658da1fc9"
+    },
+    {
+      "path": "src/lib/profile-requirements.ts",
+      "sourceSha256": "3af04237b938bf076016251e7aad205eb6395b53741234cdaf5a5b66e7d50b42"
+    },
+    {
+      "path": "src/lib/prisma.ts",
+      "sourceSha256": "e6522bf295990d2416a71c2fceddd99ca84ffee5a3a53f524ac27fdd07e77675"
+    },
+    {
+      "path": "src/server/cosmetics.ts",
+      "sourceSha256": "525ff0766a39f87111fcd718436a62fc93a23848bf744a6bf8d680b5f6c86abc"
+    },
+    {
+      "path": "src/lib/nameplates.ts",
+      "sourceSha256": "9c16da2e3343505d41deb0ae19e7d9104f6c375171a16d7f65a4f47308587d09"
+    },
+    {
+      "path": "src/server/community.ts",
+      "sourceSha256": "8124933a6aaeb4adccf1d3441b2d03f8d47e3efac431bef2d1cd12e1c5841645"
+    },
+    {
+      "path": "src/app/api/admin/draft/music/route.ts",
+      "sourceSha256": "e673c1b1603164e67d3fc025929737138c89ed9661d67b5f1b3f114c50802462"
+    },
+    {
+      "path": "src/lib/draft-music.ts",
+      "sourceSha256": "23419332b74af64a53cb23abfc3a3f0215779eef84dd2c2568d9610a2ee4dec8"
+    },
+    {
+      "path": "src/app/api/admin/markets/open/route.ts",
+      "sourceSha256": "4b86cf293eb4db05c5b8d305f07a4fd6f30cbecace300563239f0fe2e0e94540"
+    },
+    {
+      "path": "src/server/betting.ts",
+      "sourceSha256": "102e3e840dd3a85817b3b81cf41bf3cf3e967ba8ba9e996aa91ce07d18d8a1d0"
+    },
+    {
+      "path": "src/server/roster.ts",
+      "sourceSha256": "d5ceca38884cbfbd69459c0f2059f6fafe4842bca204218b70f3cf0f3a11738e"
+    },
+    {
+      "path": "src/lib/fee-reduction.ts",
+      "sourceSha256": "cb2fb10435634f80806d095fb88272cf3f6c3258a0a61f20910d4298239e302a"
+    },
+    {
+      "path": "src/server/permissions.ts",
+      "sourceSha256": "b4db7debb98967920b612970fdbfbde5a6ee5d1cf890ee4ac57f385c9ae9402e"
+    },
+    {
+      "path": "src/server/hero-protection.ts",
+      "sourceSha256": "d6a026c887e27be7fb4aa4a501f8de0550e67c42f286f4cd1e511fb147e327be"
+    },
+    {
+      "path": "src/lib/game-assets.ts",
+      "sourceSha256": "3a25455bff2d0b71ec8a43ba9eda2eee774f088255070c74047a6e267a23626a"
+    },
+    {
+      "path": "public/assets/champions.json",
+      "sourceSha256": "7d4338ef9c962f690473c0e598a3a26bea408a0cae42c20ae12897848e67130d"
+    },
+    {
+      "path": "public/assets/items.json",
+      "sourceSha256": "0b81b92bf3aebed977547119ab5bc5aa6f5df62f2f638f50d2943a73144a5de8"
+    },
+    {
+      "path": "src/server/market-settlement.ts",
+      "sourceSha256": "5429f9c070ff17e6c0e3c98d5f3634eafe3f1677d11422322f3ef4428c7c5e66"
+    },
+    {
+      "path": "src/server/points.ts",
+      "sourceSha256": "9c3337c37221b4e0e15972a767915474f6dbebd439745a21a1abc0a8a93a0d3d"
+    },
+    {
+      "path": "src/server/prize.ts",
+      "sourceSha256": "8e2a700b55c113d0bfc91ce6e30694fb1b78ef2f1162e7b49a4a650ea9d8fb20"
+    },
+    {
+      "path": "src/server/all-in-card.ts",
+      "sourceSha256": "4845bd86d5d2210242faea22b946935a60bfc8b8065648e60fd8530674119e86"
+    },
+    {
+      "path": "src/lib/all-in-card.ts",
+      "sourceSha256": "4dfe6163be88fba4f154c97a4ef0f6a93b933fa8734498ffac32262120bb191b"
+    },
+    {
+      "path": "src/lib/prize.ts",
+      "sourceSha256": "d00b4bb65fae49b81145783955fcaf143fe8ffea7085e769494c8d9338b9882a"
+    },
+    {
+      "path": "src/server/captain-teams.ts",
+      "sourceSha256": "7755ec8309f33961125d3fcbe1fee9c77b22791b6d37b23bd3ce0d31d35c1420"
+    },
+    {
+      "path": "src/lib/captain-teams.ts",
+      "sourceSha256": "f1efb1f4a4c439b058565b1d98a5157a9af46aafe80b789678550a95ff41993f"
+    },
+    {
+      "path": "src/lib/teams.ts",
+      "sourceSha256": "e819b05ec66359537edd0c7eb90dba5b7c6762c253e6a255926df818d36f8801"
+    },
+    {
+      "path": "src/server/account.ts",
+      "sourceSha256": "01682055f6379428066eeb642f16350d5c5ed6be5a8fb768cafa8557f5861fef"
+    },
+    {
+      "path": "src/lib/backgrounds.ts",
+      "sourceSha256": "d28f0403462664654fc49907c6af3429e64298a32e34e04c1bc4f24dba6d3d89"
+    },
+    {
+      "path": "src/lib/favorite-heroes.ts",
+      "sourceSha256": "203c79faabe3fdf135f398b2f3d226d6cdadfe4449990f0007245a02e33852ec"
+    },
+    {
+      "path": "src/server/uploads.ts",
+      "sourceSha256": "7097e2c1af43bd22a2a0e0df7989b4abb44bfea2121a578c81a23c84df37543a"
+    },
+    {
+      "path": "src/lib/oss-endpoint.ts",
+      "sourceSha256": "97323e4ccd77bd3fc65de3ea20c10f7167420d55dadcdaa7518aa0b7744bf135"
+    },
+    {
+      "path": "src/lib/image-thumbnail.ts",
+      "sourceSha256": "aaadb9cfc7a4f04410d80eb0d278919cfe61948e2b9f74d00578351bde3d2fee"
+    },
+    {
+      "path": "src/server/image-delivery.ts",
+      "sourceSha256": "533848ed9bd2e111837451557af9486fff798e6331741567c53a9571dbf33b31"
+    },
+    {
+      "path": "src/lib/upload-limits.ts",
+      "sourceSha256": "927a568f7fdff03482670b4d77086f4667bc27869254b88d73cdd80fd811fb72"
+    },
+    {
+      "path": "src/lib/svg-sanitize.ts",
+      "sourceSha256": "94273a28a6f38d530052b3b7645bad5f286be17a0ad7820c31b5fbafb20f334d"
+    },
+    {
+      "path": "src/server/odds.ts",
+      "sourceSha256": "ca2fb94278795b2e082d34f17d8b4c156445a1fec393778a239a241adf42a440"
+    },
+    {
+      "path": "src/lib/lineup-readiness.ts",
+      "sourceSha256": "02ff1298ce66e57dfa25ec7e2cd43f3cb0a8ada2ec2217f3cfa783cf408d6b7f"
+    },
+    {
+      "path": "src/server/market-window.ts",
+      "sourceSha256": "8962f84ea7e679dd178f0595eda2d900050b8105791a063aac70431150762cff"
+    },
+    {
+      "path": "src/app/api/admin/markets/route.ts",
+      "sourceSha256": "4d2473893b6d2d46bb3de14f59ff75ca2c90d38dda213910adfa48c8646f54d4"
+    },
+    {
+      "path": "src/lib/market-list-query.ts",
+      "sourceSha256": "b951b2a68ab04f7d5ab85a383043c85d68951697baf99f25e99c8a7ebd2ae482"
+    },
+    {
+      "path": "src/app/api/admin/markets/[id]/bets/route.ts",
+      "sourceSha256": "a238495ea377aed21314da31c513f950ab4a4b5238edfb6dc9240908a8b27780"
+    },
+    {
+      "path": "src/app/api/admin/markets/[id]/close/route.ts",
+      "sourceSha256": "5f9d5c20bb71faf61c112f2893295f7ec7063cd47a29952376f78e5db6b3b7a5"
+    },
+    {
+      "path": "src/app/api/admin/markets/[id]/settle/route.ts",
+      "sourceSha256": "44643ad9ad50dbd5bdcbf80607ec3cd74a689e004ebc130fd96e28ea854479c4"
+    },
+    {
+      "path": "src/app/api/admin/markets/[id]/void/route.ts",
+      "sourceSha256": "fcf06d40e51cda5ca74dc15896496c8fbcca325be2513337ad083eb8dbb9cac3"
+    },
+    {
+      "path": "src/app/api/admin/match/create/route.ts",
+      "sourceSha256": "445da5c2fc8dfd1214c038b81c6234b548e63a917727e92b3547d48a0d5a039c"
+    },
+    {
+      "path": "src/server/admin.ts",
+      "sourceSha256": "a2744cb44fc301ec555942d78496a97c2a9f3a790980ede4d3b33413afdb5de7"
+    },
+    {
+      "path": "src/server/fee-card-use.ts",
+      "sourceSha256": "9024db60a0715911a6a1daba709545f702c4598c71acfc5d65603a107b6fad39"
+    },
+    {
+      "path": "src/lib/repository.ts",
+      "sourceSha256": "ff4dbb8ccb3afbe2454986a9c72c6c4345a9afc6beb0664f5168cd2bdbd3f998"
+    },
+    {
+      "path": "src/server/nameplates.ts",
+      "sourceSha256": "e381a989622e63ed94f5647fa2972e1daeb7d5ef2fa373f1fe1d418e5626d147"
+    },
+    {
+      "path": "src/lib/data.ts",
+      "sourceSha256": "a0e0f349fa4103a89beb2befe902fb97053041eafb027e5ffca1a4095c70fced"
+    },
+    {
+      "path": "src/server/records.ts",
+      "sourceSha256": "eccaefec46aa96bc873a063b4580f6d708f0e05f1f057b34438efe272b64ccf4"
+    },
+    {
+      "path": "src/app/api/admin/match/delete/[id]/route.ts",
+      "sourceSha256": "85cf6c30efe11864fd9c69b7f8990771e6b755bd7f51a3c509438ffe0fec95eb"
+    },
+    {
+      "path": "src/app/api/admin/match/finish/[id]/route.ts",
+      "sourceSha256": "9d91e5b0b02548a56e542f651e6675b95c573218812250e52af98a8e83cbde3d"
+    },
+    {
+      "path": "src/app/api/admin/match/finish_pick/[id]/route.ts",
+      "sourceSha256": "e573390037da5f08667e37ced0aca8ebf4a7d93a2dd79667d34c5d6bcd08fba7"
+    },
+    {
+      "path": "src/app/api/admin/match/fmvp/[id]/route.ts",
+      "sourceSha256": "8e1a20cb1f08a6aa2ddb29bc1eb44519219fab75419976bdeb3a6f597c5bb90c"
+    },
+    {
+      "path": "src/app/api/admin/match/live/[id]/route.ts",
+      "sourceSha256": "8c7ffd58bc31d577b62da3352f0ad02e83ad10eb2cde75260306f4a41f1e1180"
+    },
+    {
+      "path": "src/app/api/admin/match/prize/[id]/route.ts",
+      "sourceSha256": "f98b2a6c92de879412535099de06660e0192cd109bba020a9c751e70b70c742f"
+    },
+    {
+      "path": "src/app/api/admin/match/round/end/[id]/route.ts",
+      "sourceSha256": "59edfb2c046cff4e1b237de395f5c50b16b48700803da1e781980895d3044bdd"
+    },
+    {
+      "path": "src/app/api/admin/match/score/route.ts",
+      "sourceSha256": "05e75ce3bd00e4bf45171dce2529975d9802fc0d86aca684d83856d65141a513"
+    },
+    {
+      "path": "src/app/api/admin/match/set_bo/[id]/route.ts",
+      "sourceSha256": "30cd4be7911e7b16bf53f46d5220c86eb078e9e0961ae28fd0c3847bbe80a5fc"
+    },
+    {
+      "path": "src/app/api/admin/match/set_fee/[id]/route.ts",
+      "sourceSha256": "faceff2ca6e5a87fefb8072df14fe6fb5482830af3d3a8d249e9267d80b27b0e"
+    },
+    {
+      "path": "src/app/api/admin/match/status/[id]/route.ts",
+      "sourceSha256": "aa944257c6972bf0009550cee04b1eedee824608d106dab034095f0f2675e684"
+    },
+    {
+      "path": "src/app/api/admin/match/update/[id]/route.ts",
+      "sourceSha256": "c225003d8a80dd396df6ab2c062766ce6de89ce1b2a70b145c18525fcbced0dc"
+    },
+    {
+      "path": "src/app/api/admin/permissions/route.ts",
+      "sourceSha256": "3684646b2e5700688104c4cde9edeba52fabe3e9625b4db35fc88e78e05cad1d"
+    },
+    {
+      "path": "src/lib/admin-capabilities.ts",
+      "sourceSha256": "81e23f198084e17d1a2ad561692b844155d2da422ec6fa2d808f727a97c57882"
+    },
+    {
+      "path": "src/app/api/admin/pick/[id]/discard/route.ts",
+      "sourceSha256": "d63630ed433f9e999648dc60e0b1f1797d3b04e608e56ea15f0a9f130ad67512"
+    },
+    {
+      "path": "src/app/api/admin/pick/[id]/route.ts",
+      "sourceSha256": "5c925526340a1df93879614eac8b9fa78dc4c03bb72dea3203cbf0278afaeae5"
+    },
+    {
+      "path": "src/app/api/admin/points/adjust/route.ts",
+      "sourceSha256": "611a050eb66a9266a466eb9fe41137c5573730e12f0e2a8f11afb3968d672557"
+    },
+    {
+      "path": "src/app/api/admin/points/recharge/route.ts",
+      "sourceSha256": "f8713a0a67c3dd73f7d0c1d5a3e1b1575ec0663e820fd66794e65ca64fc6172a"
+    },
+    {
+      "path": "src/server/recharge.ts",
+      "sourceSha256": "fa299041b90b89df176eec25cdca2cbe299886d3716501433dcb6511881f5f07"
+    },
+    {
+      "path": "src/app/api/admin/season/board/[id]/route.ts",
+      "sourceSha256": "bafd44b988ef4de317d2c64063def1084dbbebf217576da02d96f289543d11d7"
+    },
+    {
+      "path": "src/server/season.ts",
+      "sourceSha256": "bf0e30a64f6075a64c6f8d676f9c9e7fe398b43c89bdcee67e20bcc6d6c77be4"
+    },
+    {
+      "path": "src/lib/ban.ts",
+      "sourceSha256": "3be8cf5d0f9e6ddf5255ba313417dd397caaaefa7b586a472848322846ce5ddc"
+    },
+    {
+      "path": "src/lib/format-date.ts",
+      "sourceSha256": "a8f82bfddb8451cfff12ee90f7ec5ec70a329bdb9554f090a0d37a238f305023"
+    },
+    {
+      "path": "src/app/api/admin/season/create/route.ts",
+      "sourceSha256": "db2f3ea5b3b0eb6a3b7c293b8e4a5fb2accfe228e16d411753c1a3fa8ada6b2d"
+    },
+    {
+      "path": "src/app/api/admin/season/delete/route.ts",
+      "sourceSha256": "85c213b707ae958aa7d0230d8a8c1e423a58c1415f720bce059e143125d3ad99"
+    },
+    {
+      "path": "src/app/api/admin/season/final/route.ts",
+      "sourceSha256": "28a215de7362b0f73f7f3ab32447fd92653172f07c0e7bb53f9a05665339c2ec"
+    },
+    {
+      "path": "src/app/api/admin/season/group/route.ts",
+      "sourceSha256": "ad3b8d89bf1fa9d41c04e17bfea3bf4c8f7f474303e0385dff73b44164065928"
+    },
+    {
+      "path": "src/app/api/admin/season/list/route.ts",
+      "sourceSha256": "67b6043681243a84d463a7c2bb463ab923fab0b00b28c3d8939760287bfc4608"
+    },
+    {
+      "path": "src/app/api/admin/season/lock/route.ts",
+      "sourceSha256": "a3006b31f6434753e6a2fdf2f320fb08ab4a24f873da714ea5aa866927efbd78"
+    },
+    {
+      "path": "src/app/api/admin/season/match/finish/route.ts",
+      "sourceSha256": "ea30c7c5577de372901da52904a29243d245a435d2f070d56f517a0e8eeeb7c6"
+    },
+    {
+      "path": "src/app/api/admin/season/match/lineup/route.ts",
+      "sourceSha256": "8ff643aaefa6aee406b2d59782feb566b67099a9c0650775c6f58d0f984b7077"
+    },
+    {
+      "path": "src/app/api/admin/season/match/reschedule/route.ts",
+      "sourceSha256": "370ce5ad8998d72b7bb619da4340efed30bb7c5e3ad3dcfe8a638f99542b86b3"
+    },
+    {
+      "path": "src/app/api/admin/season/match/reset/route.ts",
+      "sourceSha256": "c50341c2a8fd230b223b1cd8b91163f85b2195d27761d4f65bd9e624ce3672b6"
+    },
+    {
+      "path": "src/app/api/admin/season/match/swap-schedule/route.ts",
+      "sourceSha256": "e5a415b7f30a71d251edf5247e3c3444bd34684e9043fc5101f6016ec80d51e5"
+    },
+    {
+      "path": "src/app/api/admin/season/member/assign/route.ts",
+      "sourceSha256": "f9f572979667592b38e4ae6e16b64c298c3fcd930ad4b29129b5bae5ca5d4d2c"
+    },
+    {
+      "path": "src/app/api/admin/season/member/remove/route.ts",
+      "sourceSha256": "55fdcc9f9ea64099d6e0d1c7baeb3d8e8dc539507289e87786bbf7489c6bc83b"
+    },
+    {
+      "path": "src/app/api/admin/season/nirvana-pairing/route.ts",
+      "sourceSha256": "8a6bccf8a314a362a38ccc86015f2a0b1c65b6c5cc95ca2fd5e35954f7219ddc"
+    },
+    {
+      "path": "src/app/api/admin/season/nirvana-playoffs/route.ts",
+      "sourceSha256": "6cc3bd13284e023be64d48353d271d8585db8a6da52f4d150bf0b50ad173f7f8"
+    },
+    {
+      "path": "src/app/api/admin/season/playoffs/route.ts",
+      "sourceSha256": "2d02227390dfa267aa59b124249e19728392dc948c55bd05839544f3bd1ac371"
+    },
+    {
+      "path": "src/app/api/admin/season/prize/[id]/route.ts",
+      "sourceSha256": "e36029cacb0a5a3635eca8856de9501dff0c4d04dc443cc74f638e4853b41ec5"
+    },
+    {
+      "path": "src/app/api/admin/season/reschedule/route.ts",
+      "sourceSha256": "4f0e9bfe30d457e6e9f7091b76f568766b22b9f724c59f23ea34f725dc5f7701"
+    },
+    {
+      "path": "src/app/api/admin/season/swiss/advance/route.ts",
+      "sourceSha256": "521fabd7c5338672697952f6ca942853804b8ae82aa95fca3293cecd9d6a0b57"
+    },
+    {
+      "path": "src/app/api/admin/season/swiss/start/route.ts",
+      "sourceSha256": "d71eed42ca7845129d56cddc562ac053ec9ffcad2e9118e8aa9322b2149a3195"
+    },
+    {
+      "path": "src/app/api/admin/season/team/create/route.ts",
+      "sourceSha256": "7daa267a62226337e27a83d4fcd2ee3565d5b5220c43e2cb96a8e58b735511d2"
+    },
+    {
+      "path": "src/app/api/admin/season/team/delete/route.ts",
+      "sourceSha256": "6c750e017d1510d61e40ddb49c51dad57a864b7d29e9620df409124578c37d35"
+    },
+    {
+      "path": "src/app/api/admin/season/team/group/route.ts",
+      "sourceSha256": "91c0acaa35132725f64940564e31d25c37fe6709d12e981d9e3d3c09db6c33b6"
+    },
+    {
+      "path": "src/app/api/admin/season/team/update/route.ts",
+      "sourceSha256": "c36c2565dbfa05eb559e372c019be56e039e8c633cce298ab74e4f579750ce3f"
+    },
+    {
+      "path": "src/app/api/admin/shop/create/route.ts",
+      "sourceSha256": "7e9ca76b6d3be4f46ee0783d10f80ba1c58e9e3b7b7006078d87472ad51e17d8"
+    },
+    {
+      "path": "src/server/shop.ts",
+      "sourceSha256": "13b18cb5d8c79869631dade4087d9974905df0cdf699b6b59865fa08a77a71df"
+    },
+    {
+      "path": "src/lib/dynamic-backgrounds.ts",
+      "sourceSha256": "dd3180cb8888abf9ae162bbcb3d0ef32fde89521869e3b25a95f4b596c94cb1a"
+    },
+    {
+      "path": "src/lib/shop-categories.ts",
+      "sourceSha256": "5677068e0f0427e22142fae067b8d33e9d3be1f23c011e232a51647bb423c21b"
+    },
+    {
+      "path": "src/lib/avatar-frames.ts",
+      "sourceSha256": "005ed4d84da8fde7f1e3fdc9f3275fe24761c41cb075c9edec840cda4214ccb3"
+    },
+    {
+      "path": "src/lib/unban-card.ts",
+      "sourceSha256": "31234b93a558dbce5a786a4d2095c596a7c27d0c71758c4a8f801a7dc479c4f7"
+    },
+    {
+      "path": "src/lib/shop-pricing.ts",
+      "sourceSha256": "28ed997df19dd9688ecefe9c54e9f15f176d24fe3d8baca1cbee7aa970316114"
+    },
+    {
+      "path": "src/app/api/admin/shop/route.ts",
+      "sourceSha256": "6838a355a6db44733643580d9087ec9ed66aa637a25603cc3d012b4d8ace5d4e"
+    },
+    {
+      "path": "src/app/api/admin/shop/upload-icon/route.ts",
+      "sourceSha256": "c6f65e3f0d13dedb416969e6c3e1a53615d0f1522e3bf8e796459a58f779d8b7"
+    },
+    {
+      "path": "src/app/api/admin/shop/[id]/route.ts",
+      "sourceSha256": "84f00433f6e121795759932f073680a367ff3b6ae46337dd2f1e67fdfc2287e9"
+    },
+    {
+      "path": "src/app/api/admin/sign/cancel/[id]/route.ts",
+      "sourceSha256": "9635ca5de2c5cbab13386562fb0c03ec08868bcd943d64a1f7cf466b1c580c32"
+    },
+    {
+      "path": "src/app/api/admin/sign/list/route.ts",
+      "sourceSha256": "ee1c34ddf107fa02692b8641a36943dcb08cc4df46b7a89f99d2e7f28c651171"
+    },
+    {
+      "path": "src/app/api/admin/sign/position/[id]/route.ts",
+      "sourceSha256": "d8753e69bf273528bf6e4306f490a8aba2a9bd451b7a83d7a627929c2a69015f"
+    },
+    {
+      "path": "src/app/api/admin/sponsors/route.ts",
+      "sourceSha256": "b210b5f374088c6a84c65f31d1fbc734bde02f10318cd4ae520f85c52666b219"
+    },
+    {
+      "path": "src/server/sponsors.ts",
+      "sourceSha256": "c59e2f701be1bf36f355da93b04a09ae9a05324c814ef30d2396a9fe71146dcb"
+    },
+    {
+      "path": "src/app/api/admin/sponsors/[id]/route.ts",
+      "sourceSha256": "1961d6dc893b6698dd9b55c2d959400c43b14dc1a6b488dba3a8173971026cc9"
+    },
+    {
+      "path": "src/app/api/admin/team/assign/route.ts",
+      "sourceSha256": "3cbdfc92a2a723d76057e28613022a89d628379b64c40a59a54f7bf1734a6ddd"
+    },
+    {
+      "path": "src/app/api/admin/team/auto_assign/route.ts",
+      "sourceSha256": "0e70717874864ef3e5fbf27eaea4a8b74724841b5f65e2197ae92f4c4e7df31b"
+    },
+    {
+      "path": "src/app/api/admin/team/clear_assignments/route.ts",
+      "sourceSha256": "c3ee181173fa7dacfc53f37df06a191996247421a6fc54ebb2df4111396f41ef"
+    },
+    {
+      "path": "src/app/api/admin/team/create/route.ts",
+      "sourceSha256": "b18bf2115f9da0bb8e804afbaa3fb7e50ce4a7da42b6380cddb00f0be4b64402"
+    },
+    {
+      "path": "src/app/api/admin/team/delete/[id]/route.ts",
+      "sourceSha256": "6ae03f83a55d3ecc3c739022c43bc30b00d988f1f45ea66e11875f433890498c"
+    },
+    {
+      "path": "src/app/api/admin/team/logo/upload/route.ts",
+      "sourceSha256": "ddc3dd436ca6176f3c3c44807e7849b1c364620f10a840c52894bd50b3b8c538"
+    },
+    {
+      "path": "src/app/api/admin/team/move/route.ts",
+      "sourceSha256": "a24a2e50f6f5d09b168e9ffa0efd272ceac9223c1ca6730c221c2e5b2c038c4f"
+    },
+    {
+      "path": "src/app/api/admin/team/reorder/route.ts",
+      "sourceSha256": "fb1a03bb69acafd64653a1c7ff7cb099655ae1deaa670943ccae21ecdb5efe1f"
+    },
+    {
+      "path": "src/app/api/admin/teams/[id]/route.ts",
+      "sourceSha256": "9836a1f677ef2a727f7c299da9979b585c9aa200598b1a4316db80f376593048"
+    },
+    {
+      "path": "src/app/api/admin/users/admin/route.ts",
+      "sourceSha256": "305eb875b38d195ba0e11d38e8bf1157d6ea662a522a564559d48a33a446729c"
+    },
+    {
+      "path": "src/app/api/admin/users/ban/route.ts",
+      "sourceSha256": "832832e9d95b52c45b268f188783202e2dead7745146b1db223679ca073ce7e8"
+    },
+    {
+      "path": "src/app/api/admin/users/batch-approve/route.ts",
+      "sourceSha256": "c99d0c01c29100f6faa37a2088e3b52c65597dc29f22c88cd9767a68b20fd39e"
+    },
+    {
+      "path": "src/app/api/admin/users/delete/[id]/route.ts",
+      "sourceSha256": "478c5651b7dcc0131c16181330e4a24504d51318a7970a834cf1f126fdac3b75"
+    },
+    {
+      "path": "src/app/api/admin/users/game_name/route.ts",
+      "sourceSha256": "652b4bed0a9a5bf81dc701d2c80b6c81e5a28df4a84405245dfd71f2d0aa0fb1"
+    },
+    {
+      "path": "src/app/api/admin/users/password/route.ts",
+      "sourceSha256": "0d92d4c9e03f503113b682a66530aa8dddbf73cf28a963c67ba10ce91d0decc4"
+    },
+    {
+      "path": "src/app/api/admin/users/rank/route.ts",
+      "sourceSha256": "497ab9be13f2794cfd300fccdb3c43424e1e8db31d82661e591418cd6f031c9e"
+    },
+    {
+      "path": "src/app/api/admin/users/records/[id]/route.ts",
+      "sourceSha256": "ca25923ff3a034acd1a817f4d751ec5392fd51e97a16c585a3306b0b0493510f"
+    },
+    {
+      "path": "src/app/api/admin/users/route.ts",
+      "sourceSha256": "1b50f90218eda8a0f3f528cc2c3538f5fec9e9f089c946c0cb1e0553b20a0a1c"
+    },
+    {
+      "path": "src/app/api/admin/users/status/route.ts",
+      "sourceSha256": "f20ccee5a58b24e6d353802a5c1ed615ec54fedc98650ebb84e287884cf1ff7b"
+    },
+    {
+      "path": "src/app/api/admin/users/unban/route.ts",
+      "sourceSha256": "6398962bceca247db35d5854737078818a0587ac578b0cb98ab22ccb188656a5"
+    },
+    {
+      "path": "src/app/api/admin/videos/route.ts",
+      "sourceSha256": "e2d0a1a89aae4246664f8bc1332a7875bfc699f05ea45f79cf0a207f034efa57"
+    },
+    {
+      "path": "src/server/videos.ts",
+      "sourceSha256": "b218c73cb2ab5b64292615efd7452c0e68ea3b205733dec77d8c5f229b4f5995"
+    },
+    {
+      "path": "src/app/api/admin/videos/upload/chunk/route.ts",
+      "sourceSha256": "de89a70476a8f7680d9773fa75c5cde986a200155f15e9e735f7fc3e0294c481"
+    },
+    {
+      "path": "src/app/api/admin/videos/upload/complete/route.ts",
+      "sourceSha256": "58654602c03a57eda029ce2f2141c4e2668146f13e60b7059e2cba3f2f6d8861"
+    },
+    {
+      "path": "src/app/api/admin/videos/upload/init/route.ts",
+      "sourceSha256": "efe08580a5c5882df0646b2b97f5f082dcae18f11ee0c34934d3ba06147ed571"
+    },
+    {
+      "path": "src/app/api/admin/videos/upload/status/route.ts",
+      "sourceSha256": "f7dec373a1db07c63188e3b06162ee4775c8842e8ec7de7962b469156e2fc55e"
+    },
+    {
+      "path": "src/app/api/admin/videos/[id]/route.ts",
+      "sourceSha256": "8dc659d4f9763d5ff5e86111bed656ea028bed35b48561bfe103f8f95ba64e0e"
+    },
+    {
+      "path": "src/app/api/login/route.ts",
+      "sourceSha256": "ec603f6cf28758cafae47a46b33a8392b7d8446e71dc0b5859bbd8b3bda47422"
+    },
+    {
+      "path": "src/app/api/logout/route.ts",
+      "sourceSha256": "c9815aaca0b1795c275633ceefdb07f83772b3ff5f3ccfebb6874459bad5332e"
+    },
+    {
+      "path": "src/app/api/current_user/route.ts",
+      "sourceSha256": "59fcefa6c6656a56db15a1e0bf3e0fc0c147ff87b0ea7eea33e936beaa38c784"
+    },
+    {
+      "path": "src/app/api/user/change_pwd/route.ts",
+      "sourceSha256": "0d7eeae1b86ce165d7814b3e98ab539e0893fa681521fe36da9c1451d91b0cfe"
+    },
+    {
+      "path": "src/app/api/match/list/route.ts",
+      "sourceSha256": "40fac9639076973b59adc064567015fa92dcc09bcca2ec701367d68fc3950b9a"
+    },
+    {
+      "path": "src/server/matches.ts",
+      "sourceSha256": "af49dc510ad614cc01c5b60a1ce39eb133967d38fb5e0324bdc194ac4ae87755"
+    },
+    {
+      "path": "src/server/match-registration.ts",
+      "sourceSha256": "e6bd5cbaffd559e164790c041bcb78754a6111000a2ae3ca669fc130aa1cb5d0"
+    },
+    {
+      "path": "src/lib/match-registration.ts",
+      "sourceSha256": "f3fc50243c6c9fa9f4bb4d5173067fc14fb43bf7613cd0785fc6aaec18960614"
+    },
+    {
+      "path": "src/app/api/sponsors/route.ts",
+      "sourceSha256": "57cda802bdda976450c044eeecf735abb8cee9f82be1b4278ef2eac74c8f74af"
+    },
+    {
+      "path": "src/app/api/health/route.ts",
+      "sourceSha256": "51cc956c8da6e87bf30fd4634996e6ef25f7a392d0fdd0077b137a4a1d0eef78"
+    },
+    {
+      "path": "src/types/ali-oss.d.ts",
+      "sourceSha256": "a3b569109a0e964fa1489fc84c217c17afe365826e416ac48ee4974394f6ace1"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+export const MAX_AVATAR_UPLOAD_BYTES = 500 * 1024;

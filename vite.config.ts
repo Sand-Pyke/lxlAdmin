@@ -5,7 +5,7 @@ import { createProxyOptions } from './config/proxy.mjs';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const target = env.BACKEND_ORIGIN || 'http://127.0.0.1:3000';
+  const target = env.BACKEND_ORIGIN || 'http://127.0.0.1:3001';
   if (Boolean(env.DEV_HTTPS_KEY) !== Boolean(env.DEV_HTTPS_CERT)) {
     throw new Error('DEV_HTTPS_KEY 和 DEV_HTTPS_CERT 必须同时配置');
   }

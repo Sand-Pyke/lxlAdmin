@@ -8,3 +8,7 @@ tests
 *.tsbuildinfo
 *.log
 .certs
+backend/node_modules
+backend/.next
+backend/.env*
+backend/data
