@@ -33,9 +33,9 @@ import {
   statusStillBlocked,
 } from '@/server/permissions';
 import {
+  budgetForTeamCount,
   isBracketTeamCount,
   isPosition,
-  matchBudget,
   pairTeams,
   POSITIONS,
   rankFee,
@@ -447,58 +447,59 @@ export async function deleteMatch(matchId: number, actorId?: number) {
 
 /** 后台分队看板：队伍 + 每队已用费用 + 报名列表（含段位费用）。 */
 export async function teamsBoard(matchId: number) {
-  const match = await requireMatch(matchId);
-  const [rawTeams, signs, scores, frozenRounds, allFrozenRounds] = await Promise.all([
-    prisma.team.findMany({ where: { matchId }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] }),
-    prisma.matchSignup.findMany({
-      where: { matchId, isWaitlisted: false },
-      orderBy: [{ positionOrder: 'asc' }, { id: 'asc' }],
-      include: {
-        user: {
-          include: {
-            profile: {
-              select: {
-                rank: true,
-                avatar: true,
-                mainPosition: true,
-                subPosition: true,
-                gameName: true,
+  return (await loadTeamsBoard(matchId)).board;
+}
+
+export async function loadTeamsBoard(matchId: number) {
+  const match = await prisma.match.findUnique({
+    where: { id: matchId },
+    relationLoadStrategy: 'join',
+    include: {
+      teams: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
+      signups: {
+        orderBy: [{ positionOrder: 'asc' }, { id: 'asc' }],
+        include: {
+          user: {
+            select: {
+              username: true,
+              profile: {
+                select: {
+                  rank: true,
+                  avatar: true,
+                  mainPosition: true,
+                  subPosition: true,
+                  gameName: true,
+                },
               },
             },
           },
         },
       },
-    }),
-    prisma.matchScore.findMany({
-      where: { matchId, roundNo: match.currentRound || 1 },
-      select: { teamOneId: true, teamTwoId: true, scoreOne: true, scoreTwo: true },
-    }),
-    prisma.matchRound.findMany({
-      where: { matchId, roundNo: match.currentRound || 1 },
-      orderBy: { id: 'asc' },
-    }),
-    prisma.matchRound.findMany({
-      where: { matchId },
-      orderBy: [{ roundNo: 'asc' }, { id: 'asc' }],
-    }),
-  ]);
+      scores: {
+        select: { roundNo: true, teamOneId: true, teamTwoId: true, scoreOne: true, scoreTwo: true },
+      },
+      rounds: { orderBy: [{ roundNo: 'asc' }, { id: 'asc' }] },
+      fmvpUser: {
+        select: {
+          id: true,
+          username: true,
+          profile: { select: { gameName: true, avatar: true } },
+        },
+      },
+    },
+  });
+  if (!match) throw notFound('赛事不存在');
+  const roundNo = match.currentRound || 1;
+  const { teams: rawTeams, rounds: allFrozenRounds, fmvpUser } = match;
+  const signs = match.signups.filter((sign) => !sign.isWaitlisted);
+  const scores = match.scores.filter((score) => score.roundNo === roundNo);
+  const frozenRounds = allFrozenRounds.filter((round) => round.roundNo === roundNo);
 
   const teams = match.captainPosition
     ? rawTeams.filter(
         (team) => team.captainSignupId || signs.some((sign) => sign.teamId === team.id),
       )
     : rawTeams;
-  // 今日 FMVP 选手（若已设置）。
-  const fmvpUser = match.fmvpUserId
-    ? await prisma.user.findUnique({
-        where: { id: match.fmvpUserId },
-        select: {
-          id: true,
-          username: true,
-          profile: { select: { gameName: true, avatar: true } },
-        },
-      })
-    : null;
 
   const useFee = Boolean(match.useFee);
   const usedByTeam = new Map<number, number>();
@@ -509,7 +510,6 @@ export async function teamsBoard(matchId: number) {
 
   // 当前轮的所有对阵（可能同时有多组对战），以及每组是否已录入比分。
   // 第 1 轮之后优先读取已固化的 MatchRound（胜者晋级后的对阵），否则现场生成。
-  const roundNo = match.currentRound || 1;
   const roundPairs: [number, number][] = frozenRounds.length
     ? frozenRounds.map((row) => [row.teamOneId, row.teamTwoId])
     : pairTeams(match, teams).filter((pair): pair is [number, number] => pair[1] !== null);
@@ -542,7 +542,14 @@ export async function teamsBoard(matchId: number) {
     team_two: row.teamTwoId,
   }));
 
-  return {
+  const totalFee = signs.reduce((sum, sign) => sum + rankFee(signRank(sign)), 0);
+  // 与 activeMatchTeamWhere 一致：包括有历史报名关联的队伍。
+  const assignedTeamIds = new Set(match.signups.map((sign) => sign.teamId));
+  const budgetTeams = match.captainPosition
+    ? rawTeams.filter((team) => team.captainSignupId != null || assignedTeamIds.has(team.id))
+    : rawTeams;
+
+  const board = {
     match: {
       id: match.id,
       name: match.name,
@@ -606,7 +613,7 @@ export async function teamsBoard(matchId: number) {
     has_score,
     round_pairs,
     all_round_pairs,
-    budget: useFee ? await matchBudget(matchId) : 0,
+    budget: useFee ? budgetForTeamCount(totalFee, budgetTeams.length) : 0,
     fmvp: fmvpUser
       ? {
           user_id: fmvpUser.id,
@@ -616,6 +623,10 @@ export async function teamsBoard(matchId: number) {
         }
       : null,
   };
+  const waitlistedSigns = match.signups
+    .filter((sign) => sign.isWaitlisted)
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id - b.id);
+  return { board, waitlistedSigns };
 }
 
 /** FMVP 只能选本场冠军队的正式成员；校验和保存共用事务，设置后不可更改。 */

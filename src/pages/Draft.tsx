@@ -1,4 +1,4 @@
-import { App as AntApp, Alert, Button, ConfigProvider, Result, Spin, theme } from 'antd';
+import { App as AntApp, Alert, Button, ConfigProvider, Result, theme } from 'antd';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { BigScreenDraft } from '../components/draft/big-screen-draft';
@@ -16,6 +16,7 @@ export default function Draft() {
     queryKey: ['draft-music'],
     queryFn: ({ signal }) => loadDraftMusic(signal),
     enabled: valid && allowed,
+    staleTime: 5 * 60_000,
   });
   if (!valid)
     return (
@@ -28,13 +29,6 @@ export default function Draft() {
         title="没有大屏选人权限"
         extra={<Link to="/matches">返回赛事管理</Link>}
       />
-    );
-  if (music.isPending)
-    return (
-      <div className="loading-page">
-        <Spin />
-        <p>正在加载大屏选人…</p>
-      </div>
     );
   return (
     <ConfigProvider
@@ -60,7 +54,7 @@ export default function Draft() {
             action={<Button onClick={() => void music.refetch()}>重新加载音乐</Button>}
           />
         )}
-        <BigScreenDraft matchId={id} musicTracks={music.data?.tracks || []} />
+        <BigScreenDraft key={id} matchId={id} musicTracks={music.data?.tracks || []} />
       </AntApp>
     </ConfigProvider>
   );

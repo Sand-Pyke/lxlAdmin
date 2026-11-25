@@ -7,7 +7,8 @@ async function login(page: Page, path = '/matches') {
 }
 async function enter(page: Page) {
   await login(page);
-  await page.getByRole('link', { name: '大屏选人', exact: true }).click();
+  await page.locator('a[href="/matches/1"]').click();
+  await page.getByRole('button', { name: /大屏选人/ }).click();
   await page.getByRole('button', { name: 'DK', exact: true }).click();
   await page.getByRole('button', { name: 'T1', exact: true }).click();
   await page.getByRole('button', { name: /前进/ }).click();
@@ -15,6 +16,26 @@ async function enter(page: Page) {
 }
 test.beforeEach(async ({ request }) => {
   await request.get('/api/__test/reset');
+});
+
+test('draft opens while the music catalogue is still loading', async ({ page }) => {
+  let finishMusic!: () => void;
+  const musicGate = new Promise<void>((resolve) => {
+    finishMusic = resolve;
+  });
+  await page.route('**/api/admin/draft/music', async (route) => {
+    await musicGate;
+    await route.continue();
+  });
+  try {
+    await login(page, '/draft/1');
+    await expect(page.getByRole('button', { name: 'DK', exact: true })).toBeVisible();
+  } finally {
+    finishMusic();
+  }
+  await expect(
+    page.getByRole('button', { name: '播放背景音乐，展开歌曲列表', exact: true }),
+  ).toBeVisible();
 });
 test('1.0 manual picks, unassignment, rank filtering, budget override and refresh recovery', async ({
   page,

@@ -8,4 +8,5 @@ export const prisma =
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
   });
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+// Next can bundle this module into multiple route groups in the same process.
+globalForPrisma.prisma = prisma;

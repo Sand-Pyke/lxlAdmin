@@ -52,6 +52,10 @@ export async function matchBudget(matchId: number, db: Prisma.TransactionClient 
     db.team.count({ where: activeMatchTeamWhere(matchId) }),
   ]);
   const total = signs.reduce((sum, sign) => sum + rankFee(signRank(sign)), 0);
+  return budgetForTeamCount(total, teamCount);
+}
+
+export function budgetForTeamCount(total: number, teamCount: number) {
   if (teamCount <= 0) return Math.max(total, 1);
   return Math.max(1, Math.ceil(total / teamCount) + 1);
 }

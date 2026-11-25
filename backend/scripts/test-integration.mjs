@@ -227,6 +227,20 @@ try {
     (await db.matchSignup.findFirst({ where: { userId: target.id } })).rankAtSignup,
     '钻石+',
   );
+  const waiting = await db.matchSignup.create({
+    data: { userId: actors.player.id, matchId: match.id, isWaitlisted: true },
+  });
+  const draftResponse = await call(`/api/admin/pick/${match.id}?live=1`, { cookie: cookies.core });
+  assert.equal(draftResponse.status, 200);
+  const draft = await draftResponse.json();
+  assert.deepEqual(
+    draft.board.signs.map((sign) => sign.user_id),
+    [target.id],
+  );
+  assert.equal(draft.signs.find((sign) => sign.id === waiting.id)?.is_waitlisted, true);
+  const draftWithStats = await call(`/api/admin/pick/${match.id}`, { cookie: cookies.core });
+  assert.equal(draftWithStats.status, 200);
+  assert.equal((await draftWithStats.json()).leaderboard_ready, true);
   for (const role of ['admin', 'reviewer'])
     assert.equal(
       (

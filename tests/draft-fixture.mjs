@@ -96,6 +96,10 @@ export function draftRequest(req, res, url, body, matches = []) {
     sync();
     return send(state);
   }
+  if (path === '/api/admin/teams/1') {
+    sync();
+    return send({ ...state.board, signs: state.signs, current_round: 1, round_pairs: [] });
+  }
   if (/^\/api\/admin\/pick\/\d+$/.test(path)) return send({ error: '赛事不存在' }, 404);
   if (path === '/api/admin/team/create') {
     create(body.name);

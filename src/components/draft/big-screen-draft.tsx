@@ -10,7 +10,8 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import { Avatar, Button, Empty, InputNumber, Modal, Spin, Space } from 'antd';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useBlocker } from 'react-router-dom';
 import { useViewer } from '../../auth';
 import { can } from '../../permissions/access';
@@ -26,10 +27,10 @@ import {
   positionText,
 } from '../../data/draft-options';
 import { LEAGUE_LABEL, TEAMS_BY_LEAGUE, teamLogo } from '../../data/draft-teams';
-import { errorText, getJson, postJson as rawPostJson } from './api-client';
+import { errorText, postJson as rawPostJson } from './api-client';
+import { request } from '../../api/client';
 import { App } from 'antd';
 import { DraftMusicPlayer, type DraftMusicTrack } from './draft-music-player';
-import { pollLiveJson } from './live-poll';
 
 export type Sign = {
   id: number;
@@ -83,7 +84,7 @@ export type Board = {
   budget: number;
 };
 
-export type DraftData = { board: Board; signs: Sign[] };
+export type DraftData = { board: Board; signs: Sign[]; leaderboard_ready?: boolean };
 
 const POSITIONS = POSITION_OPTIONS.map((position) => ({
   value: position,
@@ -156,8 +157,6 @@ export function BigScreenDraft({
       throw new Error('当前账号没有清空选人的权限');
     return rawPostJson(url, body);
   };
-  const [data, setData] = useState<DraftData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [savingTeams, setSavingTeams] = useState(false);
   const [smartAssigning, setSmartAssigning] = useState(false);
   const [clearingAssignments, setClearingAssignments] = useState(false);
@@ -179,61 +178,70 @@ export function BigScreenDraft({
   const dirtyRef = useRef(false);
   const initializedTeams = useRef(false);
 
-  const reload = useCallback(async (): Promise<DraftData | null> => {
-    setLoading(true);
-    try {
-      const response = await getJson(`/api/admin/pick/${matchId}`);
-      const next = response as unknown as DraftData;
-      setData(next);
-      if (!initializedTeams.current) {
-        initializedTeams.current = true;
-        setSelectedTeams([...new Set(next.board.teams.map((team) => presetName(team.name)))]);
-        if (next.board.teams.length > 0) {
-          setTargetTeamId(next.board.teams[0].id);
-          if (next.board.teams.every((team) => team.player_count === 0))
-            setPosition(next.board.match.captain_position || 'TOP');
-          setStage('workspace');
-        }
-      }
-      return next;
-    } catch (error) {
-      message.error(errorText(error, '大屏选人数据加载失败'));
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, [matchId]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  useEffect(
-    () =>
-      pollLiveJson<DraftData>(`/api/admin/pick/${matchId}`, (next) => {
-        setData(next);
-        if (next.board.match.captain_position) {
-          setSelectedTeams(
-            next.board.teams
-              .filter(
-                (team) =>
-                  team.captain_signup_id || next.signs.some((sign) => sign.team_id === team.id),
-              )
-              .map((team) => team.name),
-          );
-        }
-      }),
-    [matchId],
-  );
-
   const busyRef = useRef(false);
-  busyRef.current =
+  const busy =
     savingTeams ||
     smartAssigning ||
     clearingAssignments ||
     busySign !== null ||
     reorderingTeams ||
     exitBusy;
+  busyRef.current = busy;
+  const queryClient = useQueryClient();
+  const queryKey = ['draft-board', matchId] as const;
+  const draft = useQuery({
+    queryKey,
+    queryFn: ({ signal }) => request<DraftData>(`/api/admin/pick/${matchId}?live=1`, { signal }),
+    retry: false,
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      if (busy) return false;
+      if (query.state.status === 'error') return 30_000;
+      return query.state.data?.leaderboard_ready === false ? 5_000 : 10_000;
+    },
+    refetchOnWindowFocus: () => !busyRef.current,
+  });
+  const data = draft.data;
+  useEffect(() => {
+    if (!data) return;
+    if (!initializedTeams.current) {
+      initializedTeams.current = true;
+      setSelectedTeams([...new Set(data.board.teams.map((team) => presetName(team.name)))]);
+      if (data.board.teams.length > 0) {
+        setTargetTeamId(data.board.teams[0].id);
+        if (data.board.teams.every((team) => team.player_count === 0))
+          setPosition(data.board.match.captain_position || 'TOP');
+        setStage('workspace');
+      }
+    } else if (data.board.match.captain_position) {
+      setSelectedTeams(
+        data.board.teams
+          .filter(
+            (team) => team.captain_signup_id || data.signs.some((sign) => sign.team_id === team.id),
+          )
+          .map((team) => team.name),
+      );
+    }
+  }, [data]);
+
+  async function readFreshDraft() {
+    // Finish any existing read before asking for a snapshot taken after the write.
+    if (queryClient.isFetching({ queryKey, exact: true })) {
+      await draft.refetch({ cancelRefetch: false });
+    }
+    const updated = await draft.refetch({ cancelRefetch: false, throwOnError: true });
+    if (!updated.data) throw new Error('无法读取赛事选人数据');
+    return updated.data;
+  }
+
+  async function reload() {
+    try {
+      return await readFreshDraft();
+    } catch (error) {
+      message.error(errorText(error, '大屏选人数据加载失败'));
+      return null;
+    }
+  }
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       !allowHistoryExit.current &&
@@ -371,7 +379,7 @@ export function BigScreenDraft({
     if (!board || !allTeamsReady || exitBusy) return;
     setExitBusy(true);
     try {
-      const latest = (await getJson(`/api/admin/pick/${matchId}`)) as unknown as DraftData;
+      const latest = await readFreshDraft();
       const ready =
         latest.board.teams.length > 0 &&
         latest.board.teams.every((team) => team.player_count >= POSITIONS.length);
@@ -558,8 +566,7 @@ export function BigScreenDraft({
         await postJson('/api/admin/team/create', { matchId: board.match.id, name });
         existingNames.add(teamKey(name));
       }
-      const refreshed = (await getJson(`/api/admin/pick/${matchId}`)) as unknown as DraftData;
-      setData(refreshed);
+      const refreshed = await readFreshDraft();
       const selectedExisting = refreshed.board.teams.filter((team) =>
         selectedTeams.some((name) => teamKey(name) === teamKey(team.name)),
       );
@@ -703,10 +710,13 @@ export function BigScreenDraft({
     });
   }
 
-  if (loading && !data) {
+  if (draft.isFetching && !data) {
     return (
       <main className="big-draft-loading">
-        <Spin size="large" />
+        <Space direction="vertical" align="center" role="status">
+          <Spin size="large" />
+          正在读取本场报名和队伍…
+        </Space>
       </main>
     );
   }
@@ -714,7 +724,7 @@ export function BigScreenDraft({
     return (
       <main className="big-draft-loading">
         <div>
-          <Empty description="无法读取赛事选人数据" />
+          <Empty description={errorText(draft.error, '无法读取赛事选人数据')} />
           <Space>
             <Button onClick={() => void reload()}>重试</Button>
             <Button onClick={() => leaveDraft('/matches')}>返回赛事管理</Button>
