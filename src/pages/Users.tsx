@@ -212,21 +212,6 @@ export default function Users() {
                 ),
               },
               {
-                title: '角色',
-                width: 140,
-                render: (_, row) => (
-                  <Tag bordered={false}>
-                    {row.isCoreAdmin
-                      ? '核心管理员'
-                      : row.isSecondaryAdmin
-                        ? '二级管理员'
-                        : row.isAdmin
-                          ? '管理员'
-                          : '用户'}
-                  </Tag>
-                ),
-              },
-              {
                 title: '审核状态',
                 dataIndex: 'status',
                 width: 120,
@@ -248,9 +233,51 @@ export default function Users() {
               },
               {
                 title: '操作',
-                width: 110,
+                width: 280,
+                fixed: 'right',
                 render: (_, row) => {
+                  const reviewActions =
+                    canReview(row) && (row.status === 'PENDING' || row.pendingRank) ? (
+                      <Space size={4}>
+                        <Popconfirm
+                          title={`通过 ${row.username} 的申请？`}
+                          description={
+                            row.pendingRank
+                              ? `段位将更新为 ${row.pendingRank}`
+                              : '通过后该用户可以登录平台。'
+                          }
+                          onConfirm={() =>
+                            mutation
+                              .mutateAsync({ userId: row.id, status: 'APPROVED' })
+                              .catch(() => undefined)
+                          }
+                        >
+                          <Button size="small" type="link" disabled={busy}>
+                            通过
+                          </Button>
+                        </Popconfirm>
+                        {!row.isAdmin && (
+                          <Popconfirm
+                            title={`拒绝 ${row.username} 的申请？`}
+                            onConfirm={() =>
+                              mutation
+                                .mutateAsync({ userId: row.id, status: 'REJECTED' })
+                                .catch(() => undefined)
+                            }
+                          >
+                            <Button danger size="small" type="link" disabled={busy}>
+                              拒绝
+                            </Button>
+                          </Popconfirm>
+                        )}
+                      </Space>
+                    ) : null;
+                  if (row.status === 'PENDING') {
+                    return reviewActions || <span className="muted">—</span>;
+                  }
+                  const canResetRank = can(viewer, USER_ACTIONS.rank.permission, row);
                   const actions = (Object.keys(USER_ACTIONS) as UserAction[])
+                    .filter((type) => type !== 'rank')
                     .filter((type) => can(viewer, USER_ACTIONS[type].permission, row))
                     .filter(
                       (type) =>
@@ -261,9 +288,7 @@ export default function Users() {
                       const reason =
                         type === 'role' && row.status !== 'APPROVED'
                           ? '请先通过账号审核再设置角色'
-                          : type === 'delete' && row.status === 'PENDING'
-                            ? '待审核账号请先完成审核或拒绝申请'
-                            : '';
+                          : '';
                       return {
                         key: type,
                         label: reason
@@ -273,65 +298,38 @@ export default function Users() {
                         disabled: busy || Boolean(reason),
                       };
                     });
-                  return actions.length ? (
-                    <Dropdown
-                      trigger={['click']}
-                      menu={{
-                        items: actions,
-                        onClick: ({ key }) => setAction({ type: key as UserAction, target: row }),
-                      }}
-                    >
-                      <Button type="link" size="small" disabled={busy}>
-                        操作
-                      </Button>
-                    </Dropdown>
-                  ) : (
-                    <span className="muted">—</span>
-                  );
-                },
-              },
-              {
-                title: '审核操作',
-                width: 160,
-                fixed: 'right',
-                render: (_, row) =>
-                  canReview(row) && (row.status === 'PENDING' || row.pendingRank) ? (
-                    <Space>
-                      <Popconfirm
-                        title={`通过 ${row.username} 的申请？`}
-                        description={
-                          row.pendingRank
-                            ? `段位将更新为 ${row.pendingRank}`
-                            : '通过后该用户可以登录平台。'
-                        }
-                        onConfirm={() =>
-                          mutation
-                            .mutateAsync({ userId: row.id, status: 'APPROVED' })
-                            .catch(() => undefined)
-                        }
-                      >
-                        <Button size="small" type="link" disabled={busy}>
-                          通过
-                        </Button>
-                      </Popconfirm>
-                      {!row.isAdmin && (
-                        <Popconfirm
-                          title={`拒绝 ${row.username} 的申请？`}
-                          onConfirm={() =>
-                            mutation
-                              .mutateAsync({ userId: row.id, status: 'REJECTED' })
-                              .catch(() => undefined)
-                          }
+                  return reviewActions || canResetRank || actions.length ? (
+                    <Space wrap size={[4, 8]}>
+                      {reviewActions}
+                      {canResetRank && (
+                        <Button
+                          type="link"
+                          size="small"
+                          disabled={busy}
+                          onClick={() => setAction({ type: 'rank', target: row })}
                         >
-                          <Button danger size="small" type="link" disabled={busy}>
-                            拒绝
+                          重置段位
+                        </Button>
+                      )}
+                      {actions.length > 0 && (
+                        <Dropdown
+                          trigger={['click']}
+                          menu={{
+                            items: actions,
+                            onClick: ({ key }) =>
+                              setAction({ type: key as UserAction, target: row }),
+                          }}
+                        >
+                          <Button type="link" size="small" disabled={busy}>
+                            更多
                           </Button>
-                        </Popconfirm>
+                        </Dropdown>
                       )}
                     </Space>
                   ) : (
                     <span className="muted">—</span>
-                  ),
+                  );
+                },
               },
             ]}
           />

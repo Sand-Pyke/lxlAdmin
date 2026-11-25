@@ -17,6 +17,7 @@ import {
   Typography,
 } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { PlusOutlined } from '@ant-design/icons';
 import { params, post, request } from '../api/client';
 import {
   gameCount,
@@ -27,7 +28,7 @@ import {
   reopenMarketBody,
 } from '../api/markets';
 import type { Bet, Market, MarketBets, MarketList, OpenBody } from '../api/markets';
-import { dateText, empty, QueryError, Refresh } from '../components/shared';
+import { dateText, empty, QueryError, Refresh, tableScrollY } from '../components/shared';
 import '../styles/markets.css';
 import Permit from '../components/Permit';
 import { useViewer } from '../auth';
@@ -168,6 +169,7 @@ export default function Markets() {
   const [sourceId, setSourceId] = useState<number>();
   const [pair, setPair] = useState<string>();
   const [round, setRound] = useState(0);
+  const [openDialog, setOpenDialog] = useState(false);
   const [action, setAction] = useState<Action | null>(null);
   const [marketId, setMarketId] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now);
@@ -207,6 +209,7 @@ export default function Markets() {
         }[next.kind],
       );
       setAction(null);
+      if (next.kind === 'open') setOpenDialog(false);
       await Promise.all([
         client.invalidateQueries({ queryKey: ['markets'] }),
         client.invalidateQueries({ queryKey: ['market-bets'] }),
@@ -289,8 +292,20 @@ export default function Markets() {
   };
   return (
     <>
-      <QueryError error={query.error} retry={query.refetch} />
-      <Card className="content-card market-open-card" title="开盘与赔率">
+      <Modal
+        title="开盘与赔率"
+        open={openDialog && action?.kind !== 'open' && can(viewer, 'markets.open')}
+        width={760}
+        onCancel={() => setOpenDialog(false)}
+        cancelText="取消"
+        okText="开盘 / 更新赔率"
+        onOk={prepareOpen}
+        okButtonProps={{
+          disabled: busy || !selected || query.isError || (kind === 'REGULAR' && !selectedPair),
+        }}
+        styles={{ body: { maxHeight: 'calc(100dvh - 240px)', overflowY: 'auto' } }}
+      >
+        <QueryError error={query.error} retry={query.refetch} />
         <div className="market-open-fields">
           <label>
             赛事类型
@@ -374,193 +389,198 @@ export default function Markets() {
             style={{ marginBottom: 16 }}
           />
         )}
-        <Space wrap>
-          <Permit permission="markets.open">
-            <Button
-              type="primary"
-              disabled={busy || !selected || query.isError || (kind === 'REGULAR' && !selectedPair)}
-              onClick={prepareOpen}
-            >
-              开盘 / 更新赔率
-            </Button>
-          </Permit>
-          <Typography.Text type="secondary">
-            常规赛支持指定对阵及 BO 小场；战队赛仅支持大场。
-          </Typography.Text>
-        </Space>
+        <Typography.Text type="secondary">
+          常规赛支持指定对阵及 BO 小场；战队赛仅支持大场。
+        </Typography.Text>
         <p className="market-help">
           赔率按出场费用自动生成。开盘 15
           分钟后截止，后台录入比分或单局战绩后由现有业务服务自动结算；未进行的小场及平局大场退还本金。
         </p>
-      </Card>
-      <Card className="content-card">
-        <div className="table-toolbar">
-          <Space wrap align="end">
-            <label className="market-date">
-              创建开始日期（北京时间）
-              <Input
-                aria-label="盘口开始日期"
-                type="date"
-                value={draftDates[0]}
-                onChange={(event) => setDraftDates([event.target.value, draftDates[1]])}
-              />
-            </label>
-            <label className="market-date">
-              创建结束日期（北京时间）
-              <Input
-                aria-label="盘口结束日期"
-                type="date"
-                value={draftDates[1]}
-                onChange={(event) => setDraftDates([draftDates[0], event.target.value])}
-              />
-            </label>
-            <Button onClick={applyDates}>筛选日期</Button>
-            <Button
-              onClick={() => {
-                const recent = recentMarketDates();
-                setDates(recent);
-                setDraftDates(recent);
-                setPage(1);
-              }}
-            >
-              近两天
-            </Button>
-            <Button
-              onClick={() => {
-                setDates(null);
-                setDraftDates(['', '']);
-                setPage(1);
-              }}
-            >
-              全部日期
-            </Button>
-          </Space>
-          <Space wrap>
-            <span className="muted">
-              {dates ? `${dates[0]} 至 ${dates[1]}` : '全部日期'} · 每 10 秒刷新
-            </span>
-            <Refresh run={query.refetch} loading={query.isFetching} />
-          </Space>
-        </div>
-        <Table<Market>
-          rowKey="id"
-          dataSource={query.data?.markets}
-          loading={query.isPending}
-          locale={{ emptyText: empty }}
-          scroll={{ x: 1260 }}
-          pagination={{
-            current: query.data?.page || page,
-            pageSize,
-            total: query.data?.total || 0,
-            showSizeChanger: true,
-            pageSizeOptions: [10, 20, 50],
-            showTotal: (total) => `共 ${total} 个盘口`,
-            onChange: (next, size) => {
-              setPage(size !== pageSize ? 1 : next);
-              setPageSize(size);
-            },
-          }}
-          columns={[
-            {
-              title: '盘口 / 赛事',
-              width: 285,
-              render: (_, market) => (
-                <div className="cell-title">
-                  {market.source.name}
-                  <small>
-                    #{market.id} · {market.source.kind === 'REGULAR' ? '常规赛' : '战队赛'} ·{' '}
-                    {marketRound(market)}
-                  </small>
-                  {market.source.pair && <small>{market.source.pair}</small>}
-                </div>
-              ),
-            },
-            {
-              title: '状态',
-              width: 100,
-              render: (_, market) => {
-                const state =
-                  market.status === 'OPEN' && new Date(market.bettingCloseAt).getTime() <= now
-                    ? { color: 'orange', label: '已截止' }
-                    : marketStates[market.status];
-                return <Tag color={state?.color}>{state?.label || market.status}</Tag>;
+      </Modal>
+      <div className="table-page">
+        <QueryError error={query.error} retry={query.refetch} />
+        <Card className="content-card table-card">
+          <div className="table-toolbar">
+            <Space wrap align="end">
+              <label className="market-date">
+                <Input
+                  aria-label="盘口开始日期"
+                  type="date"
+                  value={draftDates[0]}
+                  onChange={(event) => setDraftDates([event.target.value, draftDates[1]])}
+                />
+              </label>
+              <label className="market-date">
+                <Input
+                  aria-label="盘口结束日期"
+                  type="date"
+                  value={draftDates[1]}
+                  onChange={(event) => setDraftDates([draftDates[0], event.target.value])}
+                />
+              </label>
+              <Button onClick={applyDates}>筛选日期</Button>
+              <Button
+                onClick={() => {
+                  const recent = recentMarketDates();
+                  setDates(recent);
+                  setDraftDates(recent);
+                  setPage(1);
+                }}
+              >
+                近两天
+              </Button>
+              <Button
+                onClick={() => {
+                  setDates(null);
+                  setDraftDates(['', '']);
+                  setPage(1);
+                }}
+              >
+                全部日期
+              </Button>
+            </Space>
+            <Space wrap>
+              <Refresh run={query.refetch} loading={query.isFetching} />
+              <Permit permission="markets.open">
+                <Button
+                  type="primary"
+                  aria-label="开盘"
+                  icon={<PlusOutlined />}
+                  onClick={() => {
+                    mutation.reset();
+                    setKind('REGULAR');
+                    setSourceId(undefined);
+                    setPair(undefined);
+                    setRound(0);
+                    setOpenDialog(true);
+                  }}
+                >
+                  开盘
+                </Button>
+              </Permit>
+            </Space>
+          </div>
+          <Table<Market>
+            className="markets-table"
+            rowKey="id"
+            dataSource={query.data?.markets}
+            loading={query.isPending}
+            locale={{ emptyText: empty }}
+            scroll={{ x: 1260, y: tableScrollY }}
+            pagination={{
+              current: query.data?.page || page,
+              pageSize,
+              total: query.data?.total || 0,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50],
+              showTotal: (total) => `共 ${total} 个盘口`,
+              onChange: (next, size) => {
+                setPage(size !== pageSize ? 1 : next);
+                setPageSize(size);
               },
-            },
-            { title: '截止时间', dataIndex: 'bettingCloseAt', width: 185, render: dateText },
-            {
-              title: '选项 / 当前赔率',
-              width: 240,
-              render: (_, market) => (
-                <Space orientation="vertical">
-                  {market.outcomes.map((outcome) => (
-                    <span key={outcome.id}>
-                      {outcome.label} <strong>{outcome.odds.toFixed(2)}</strong>
-                    </span>
-                  ))}
-                </Space>
-              ),
-            },
-            {
-              title: '管理操作',
-              width: 450,
-              render: (_, market) => (
-                <Space wrap>
-                  <Button size="small" onClick={() => setMarketId(market.id)}>
-                    下注明细
-                  </Button>
-                  {['OPEN', 'CLOSED'].includes(market.status) && (
-                    <>
-                      {market.status === 'OPEN' &&
-                      new Date(market.bettingCloseAt).getTime() > now ? (
-                        <Permit permission="markets.close">
+            }}
+            columns={[
+              {
+                title: '盘口 / 赛事',
+                width: 285,
+                render: (_, market) => (
+                  <div className="cell-title">
+                    {market.source.name}
+                    <small>
+                      #{market.id} · {market.source.kind === 'REGULAR' ? '常规赛' : '战队赛'} ·{' '}
+                      {marketRound(market)}
+                    </small>
+                    {market.source.pair && <small>{market.source.pair}</small>}
+                  </div>
+                ),
+              },
+              {
+                title: '状态',
+                width: 100,
+                render: (_, market) => {
+                  const state =
+                    market.status === 'OPEN' && new Date(market.bettingCloseAt).getTime() <= now
+                      ? { color: 'orange', label: '已截止' }
+                      : marketStates[market.status];
+                  return <Tag color={state?.color}>{state?.label || market.status}</Tag>;
+                },
+              },
+              { title: '截止时间', dataIndex: 'bettingCloseAt', width: 185, render: dateText },
+              {
+                title: '选项 / 当前赔率',
+                width: 240,
+                render: (_, market) => (
+                  <Space orientation="vertical">
+                    {market.outcomes.map((outcome) => (
+                      <span key={outcome.id}>
+                        {outcome.label} <strong>{outcome.odds.toFixed(2)}</strong>
+                      </span>
+                    ))}
+                  </Space>
+                ),
+              },
+              {
+                title: '管理操作',
+                width: 450,
+                render: (_, market) => (
+                  <Space wrap>
+                    <Button size="small" onClick={() => setMarketId(market.id)}>
+                      下注明细
+                    </Button>
+                    {['OPEN', 'CLOSED'].includes(market.status) && (
+                      <>
+                        {market.status === 'OPEN' &&
+                        new Date(market.bettingCloseAt).getTime() > now ? (
+                          <Permit permission="markets.close">
+                            <Button
+                              size="small"
+                              disabled={busy}
+                              onClick={() => prepareRowAction(market, 'close')}
+                            >
+                              封盘
+                            </Button>
+                          </Permit>
+                        ) : (
+                          <Permit permission="markets.open">
+                            <Button
+                              size="small"
+                              disabled={busy}
+                              onClick={() => prepareRowAction(market, 'reopen')}
+                            >
+                              重新开盘
+                            </Button>
+                          </Permit>
+                        )}
+                        {market.outcomes.map((outcome) => (
+                          <Permit permission="markets.settle" key={outcome.id}>
+                            <Button
+                              size="small"
+                              disabled={busy}
+                              onClick={() => prepareRowAction(market, 'settle', outcome)}
+                            >
+                              {outcome.label} 胜
+                            </Button>
+                          </Permit>
+                        ))}
+                        <Permit permission="markets.void">
                           <Button
                             size="small"
+                            danger
                             disabled={busy}
-                            onClick={() => prepareRowAction(market, 'close')}
+                            onClick={() => prepareRowAction(market, 'void')}
                           >
-                            封盘
+                            作废退款
                           </Button>
                         </Permit>
-                      ) : (
-                        <Permit permission="markets.open">
-                          <Button
-                            size="small"
-                            disabled={busy}
-                            onClick={() => prepareRowAction(market, 'reopen')}
-                          >
-                            重新开盘
-                          </Button>
-                        </Permit>
-                      )}
-                      {market.outcomes.map((outcome) => (
-                        <Permit permission="markets.settle" key={outcome.id}>
-                          <Button
-                            size="small"
-                            disabled={busy}
-                            onClick={() => prepareRowAction(market, 'settle', outcome)}
-                          >
-                            {outcome.label} 胜
-                          </Button>
-                        </Permit>
-                      ))}
-                      <Permit permission="markets.void">
-                        <Button
-                          size="small"
-                          danger
-                          disabled={busy}
-                          onClick={() => prepareRowAction(market, 'void')}
-                        >
-                          作废退款
-                        </Button>
-                      </Permit>
-                    </>
-                  )}
-                </Space>
-              ),
-            },
-          ]}
-        />
-      </Card>
+                      </>
+                    )}
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        </Card>
+      </div>
       <BetsDrawer marketId={marketId} onClose={() => setMarketId(null)} />
       <Modal
         title={action?.title}

@@ -36,7 +36,7 @@ export function RankLabel({
       {icon ? (
         <img className={matchBracket ? 'match-bracket' : 'rank-icon'} src={icon} alt="" />
       ) : null}
-      {iconOnly && icon && rank?.trim() === '大师+' ? (
+      {iconOnly && icon && (rank?.trim() === '大师+' || rank?.trim() === '钻石+') ? (
         <span className="rank-icon-plus" aria-hidden="true">
           +
         </span>

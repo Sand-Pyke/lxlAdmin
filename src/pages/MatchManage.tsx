@@ -103,8 +103,12 @@ export default function MatchManage() {
   const invalidate = () => client.invalidateQueries({ queryKey: ['match-board', matchId] });
 
   const run = useMutation({
-    mutationFn: (payload: { url: string; body?: unknown; fallback: string }) =>
-      post<{ msg?: string; advanceError?: string }>(payload.url, payload.body),
+    mutationFn: (payload: { url: string; body?: unknown; fallback: string }) => {
+      if (payload.url.startsWith('/api/admin/match/delete/') && !isCoreAdmin) {
+        throw new Error('仅核心管理员可以删除赛事');
+      }
+      return post<{ msg?: string; advanceError?: string }>(payload.url, payload.body);
+    },
     onSuccess: (data, payload) => {
       void message.success(data.msg || payload.fallback);
       if (typeof data.advanceError === 'string') void message.warning(data.advanceError);
@@ -290,23 +294,25 @@ export default function MatchManage() {
                     观看直播
                   </Typography.Link>
                 ) : null}
-                <Popconfirm
-                  title={`删除赛事「${board.match.name}」？`}
-                  description="该赛事的报名、队伍、轮次与战绩会被一并删除。"
-                  okText="删除"
-                  okButtonProps={{ danger: true }}
-                  cancelText="取消"
-                  onConfirm={() =>
-                    run.mutate(
-                      { url: `/api/admin/match/delete/${matchId}`, fallback: '比赛已删除' },
-                      { onSuccess: () => navigate('/matches') },
-                    )
-                  }
-                >
-                  <Button size="small" danger icon={<DeleteOutlined />}>
-                    删除赛事
-                  </Button>
-                </Popconfirm>
+                {isCoreAdmin && (
+                  <Popconfirm
+                    title={`删除赛事「${board.match.name}」？`}
+                    description="该赛事的报名、队伍、轮次与战绩会被一并删除。"
+                    okText="删除"
+                    okButtonProps={{ danger: true }}
+                    cancelText="取消"
+                    onConfirm={() =>
+                      run.mutate(
+                        { url: `/api/admin/match/delete/${matchId}`, fallback: '比赛已删除' },
+                        { onSuccess: () => navigate('/matches') },
+                      )
+                    }
+                  >
+                    <Button size="small" danger icon={<DeleteOutlined />}>
+                      删除赛事
+                    </Button>
+                  </Popconfirm>
+                )}
               </Space>
 
               <Space wrap>

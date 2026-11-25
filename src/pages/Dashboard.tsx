@@ -13,7 +13,7 @@ import { request } from '../api/client';
 import type { MatchesResponse, UsersResponse } from '../api/types';
 import { useViewer } from '../auth';
 import Permit from '../components/Permit';
-import { dateText, empty, PageTitle, QueryError, Refresh, Status } from '../components/shared';
+import { dateText, empty, QueryError, Refresh, Status } from '../components/shared';
 
 export default function Dashboard() {
   const viewer = useViewer();
@@ -61,29 +61,25 @@ export default function Dashboard() {
     },
   ];
   return (
-    <>
-      <PageTitle
-        title="工作台"
-        description="联赛运营概览，优先处理今天的重要事项。"
-        extra={
-          <Refresh
-            run={refresh}
-            loading={users.isFetching || matches.isFetching || active.isFetching}
-          />
-        }
-      />
+    <div className="dashboard-page">
       <section className="welcome-banner">
         <div>
           <span className="eyebrow">LEAGUE OPERATIONS</span>
           <h2>{viewer.username}，欢迎回来</h2>
           <p>一场好比赛，始于每个细节的有序安排。</p>
-          <Permit permission="matches.create">
-            <Link to="/matches?create=1">
-              <Button icon={<PlusOutlined />} size="large">
-                创建常规赛
-              </Button>
-            </Link>
-          </Permit>
+          <Space wrap>
+            <Refresh
+              run={refresh}
+              loading={users.isFetching || matches.isFetching || active.isFetching}
+            />
+            <Permit permission="matches.create">
+              <Link to="/matches?create=1">
+                <Button icon={<PlusOutlined />} size="large">
+                  创建常规赛
+                </Button>
+              </Link>
+            </Permit>
+          </Space>
         </div>
         <div className="banner-mark" aria-hidden="true">
           <TrophyOutlined />
@@ -93,7 +89,7 @@ export default function Dashboard() {
       <QueryError error={users.error || matches.error || active.error} retry={refresh} />
       <Row gutter={[18, 18]} className="stat-row">
         {stats.map((stat) => (
-          <Col xs={24} sm={12} xl={6} key={stat.title}>
+          <Col xs={12} xl={6} key={stat.title}>
             <Card className="stat-card">
               <div className="stat-top">
                 <span>{stat.title}</span>
@@ -113,16 +109,18 @@ export default function Dashboard() {
           </Col>
         ))}
       </Row>
-      <Row gutter={[22, 22]}>
+      <Row gutter={[18, 18]}>
         <Col xs={24} xl={16}>
           <Card
             className="content-card"
+            size="small"
             title="最近创建的赛事"
             extra={<Link to="/matches">全部赛事</Link>}
           >
             <Table
               rowKey="id"
-              size="middle"
+              size="small"
+              tableLayout="fixed"
               pagination={false}
               dataSource={matches.data?.match_list}
               loading={matches.isPending}
@@ -134,21 +132,28 @@ export default function Dashboard() {
                   dataIndex: 'name',
                   render: (name, row) => (
                     <div className="cell-title">
-                      {name}
+                      <span className="recent-match-name" title={name}>
+                        {name}
+                      </span>
                       <small>
                         {row.bo} · {row.round}
                       </small>
                     </div>
                   ),
                 },
-                { title: '状态', dataIndex: 'status', render: (value) => <Status value={value} /> },
-                { title: '排期时间', dataIndex: 'date', render: dateText },
+                {
+                  title: '状态',
+                  dataIndex: 'status',
+                  width: 95,
+                  render: (value) => <Status value={value} />,
+                },
+                { title: '排期时间', dataIndex: 'date', width: 165, render: dateText },
               ]}
             />
           </Card>
         </Col>
         <Col xs={24} xl={8}>
-          <Card className="content-card" title="运营待办">
+          <Card className="content-card" size="small" title="运营待办">
             <Link to="/users?status=PENDING" className="task-link">
               <span className="task-icon">
                 <ClockCircleOutlined />
@@ -191,6 +196,6 @@ export default function Dashboard() {
           </Card>
         </Col>
       </Row>
-    </>
+    </div>
   );
 }

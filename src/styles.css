@@ -423,6 +423,103 @@ a:focus-visible {
   margin: 8px 0 0;
   color: #7b8975;
 }
+.dashboard-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.dashboard-page .welcome-banner {
+  min-height: 0;
+  padding: 18px 24px;
+  margin-bottom: 0;
+}
+.dashboard-page .welcome-banner h2 {
+  font-size: 22px;
+  margin: 6px 0;
+}
+.dashboard-page .welcome-banner p {
+  margin-bottom: 12px;
+}
+.dashboard-page .banner-mark {
+  width: 150px;
+  height: 110px;
+}
+.dashboard-page .banner-mark .anticon {
+  font-size: 48px;
+}
+.dashboard-page .banner-mark span:last-child {
+  margin-top: 8px;
+}
+.dashboard-page .stat-row {
+  margin-bottom: 0;
+}
+.dashboard-page .stat-card .ant-card-body {
+  padding: 14px 16px;
+}
+.dashboard-page .stat-top {
+  margin-bottom: 4px;
+}
+.dashboard-page .content-card > .ant-card-head {
+  min-height: 44px;
+}
+.dashboard-page .content-card > .ant-card-body {
+  padding: 12px;
+}
+.dashboard-page .recent-match-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dashboard-page .task-link {
+  padding: 12px 0;
+}
+.dashboard-page .permission-card {
+  margin-top: 16px;
+}
+@media (min-width: 1200px) and (max-height: 820px) {
+  .dashboard-page {
+    gap: 12px;
+  }
+  .dashboard-page .welcome-banner {
+    padding: 12px 20px;
+  }
+  .dashboard-page .welcome-banner .eyebrow,
+  .dashboard-page .welcome-banner p {
+    display: none;
+  }
+  .dashboard-page .welcome-banner h2 {
+    margin: 0 0 10px;
+  }
+  .dashboard-page .banner-mark {
+    width: 120px;
+    height: 74px;
+  }
+  .dashboard-page .banner-mark .anticon {
+    font-size: 32px;
+  }
+  .dashboard-page .stat-card .ant-card-body {
+    padding: 10px 14px;
+  }
+  .dashboard-page .stat-card small {
+    margin-top: 4px;
+  }
+  .dashboard-page .stat-card .ant-statistic-content {
+    font-size: 28px;
+    line-height: 1.2;
+  }
+  .dashboard-page .task-link {
+    padding: 10px 0;
+  }
+  .dashboard-page .permission-card .ant-card-body {
+    padding: 12px 16px;
+  }
+  .dashboard-page .ant-table.ant-table-small .ant-table-thead > tr > th,
+  .dashboard-page .ant-table.ant-table-small .ant-table-tbody > tr > td {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+}
 .query-error {
   margin-bottom: 20px;
 }
