@@ -26,4 +26,10 @@
 - 前端：`/opt/lxlleague-admin/frontend-releases/20261125-migration`
 - Nginx 迁移前备份：`/etc/lxl-admin/rollback/20261125T102630Z/`
 
-后续发布与回退见 [backend/README.md](../backend/README.md)。数据库结构维护、原后台剩余页面迁移及旧接口清理仍需后续单独安排。代码版本以 Git 提交记录为准。
+后续发布与回退见 [backend/README.md](../backend/README.md)。代码版本以 Git 提交记录为准。
+
+## 旧后台退役（2026-11-25）
+
+- 独立管理站版本 `cacc775` 补齐视频、社区、报名分路、赛事计费、常规赛队伍管理与战队赛名单、替补操作。新页面及其接口已部署，已用浏览器和隔离数据库验证管理写操作。
+- 用户站版本 `4111642` 删除旧管理页面、95 个旧管理 API 路径及专用组件，原 `/admin` 与选人书签跳转到独立后台。线上验证旧管理 API 返回 404，用户登录态、退出及赛事、社区、赞助和视频读取正常。
+- 用户站生产使用 Compose 的 app 镜像覆盖文件 `/home/admin/lxl-user-retirement-4111642/compose.app.yml` 选择 `lxl-user-runtime:4111642`，回退文件同目录。发布正式仓库镜像前，继续使用该覆盖文件以维持当前版本。共享数据库、用户数据和历史迁移均保留。
