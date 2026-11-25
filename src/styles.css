@@ -332,6 +332,26 @@ a:focus-visible {
 .users-table .cell-title {
   overflow-wrap: anywhere;
 }
+.users-filters,
+.users-filters > .ant-space-item {
+  max-width: 100%;
+}
+.users-table-compact {
+  container-type: inline-size;
+}
+.users-table-compact :is(.ant-table-thead, .ant-table-tbody) > tr > .ant-table-cell {
+  padding-inline: 8px;
+}
+.users-table-compact .users-identity {
+  display: flex;
+}
+.users-table-compact .users-identity > .ant-space-item:last-child {
+  min-width: 0;
+}
+.users-table-compact .ant-table-cell-fix-right .ant-btn-link {
+  min-height: 32px;
+  padding-inline: 4px;
+}
 .cell-title {
   font-weight: 500;
   line-height: 1.5;

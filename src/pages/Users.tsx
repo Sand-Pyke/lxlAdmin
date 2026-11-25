@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Dropdown,
+  Grid,
   Input,
   Popconfirm,
   Select,
@@ -37,6 +38,14 @@ export default function Users() {
   const viewer = useViewer();
   const client = useQueryClient();
   const { message } = App.useApp();
+  const { md } = Grid.useBreakpoint();
+  const compact = md === false;
+  const selectionWidth = compact ? 36 : 48;
+  const actionWidth = compact ? 98 : 280;
+  // Reserve space for the scrollbar next to the fixed action column.
+  const identityWidth = compact
+    ? `min(210px, calc(100cqw - ${selectionWidth + actionWidth + 18}px))`
+    : 210;
   const status = ['PENDING', 'APPROVED', 'REJECTED'].includes(search.get('status') || '')
     ? search.get('status')!
     : '';
@@ -85,7 +94,7 @@ export default function Users() {
         <QueryError error={query.error} retry={query.refetch} />
         <Card className="content-card table-card">
           <div className="table-toolbar">
-            <Space wrap>
+            <Space className="users-filters" wrap>
               <Select
                 aria-label="用户角色筛选"
                 value={role}
@@ -113,7 +122,7 @@ export default function Users() {
                   setPage(1);
                   setSelected([]);
                 }}
-                style={{ width: 290 }}
+                style={{ width: 290, maxWidth: '100%' }}
               />
               <Select
                 aria-label="审核状态"
@@ -148,15 +157,15 @@ export default function Users() {
             </Space>
           </div>
           <Table<User>
-            className="users-table"
+            className={compact ? 'users-table users-table-compact' : 'users-table'}
             tableLayout="fixed"
             rowKey="id"
             dataSource={query.data?.users}
             loading={query.isPending}
-            scroll={{ x: 1400, y: tableScrollY }}
+            scroll={{ x: compact ? 'max-content' : 1400, y: tableScrollY }}
             locale={{ emptyText: empty }}
             rowSelection={{
-              columnWidth: 48,
+              columnWidth: selectionWidth,
               selectedRowKeys: selected,
               onChange: (keys) => setSelected(keys),
               getCheckboxProps: (row) => ({
@@ -179,9 +188,9 @@ export default function Users() {
               {
                 title: '用户',
                 dataIndex: 'username',
-                width: 210,
+                width: identityWidth,
                 render: (_, row) => (
-                  <Space>
+                  <Space className="users-identity">
                     <Avatar src={row.profile?.avatar || undefined} icon={<UserOutlined />} />
                     <div className="cell-title">
                       {row.username}
@@ -233,7 +242,7 @@ export default function Users() {
               },
               {
                 title: '操作',
-                width: 280,
+                width: actionWidth,
                 fixed: 'right',
                 render: (_, row) => {
                   const reviewActions =
@@ -299,7 +308,11 @@ export default function Users() {
                       };
                     });
                   return reviewActions || canResetRank || actions.length ? (
-                    <Space wrap size={[4, 8]}>
+                    <Space
+                      orientation={compact ? 'vertical' : 'horizontal'}
+                      wrap={!compact}
+                      size={compact ? 0 : [4, 8]}
+                    >
                       {reviewActions}
                       {canResetRank && (
                         <Button
