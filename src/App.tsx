@@ -20,6 +20,8 @@ const DraftLineup = lazy(() => import('./pages/DraftLineup'));
 const MatchManage = lazy(() => import('./pages/MatchManage'));
 const SeasonManage = lazy(() => import('./pages/SeasonManage'));
 const Sponsors = lazy(() => import('./pages/Sponsors'));
+const Videos = lazy(() => import('./pages/Videos'));
+const Community = lazy(() => import('./pages/Community'));
 function Loading() {
   return (
     <div className="loading-page">
@@ -154,6 +156,8 @@ export default function Application() {
                 <Route path="signups" element={<Signups />} />
                 <Route path="seasons" element={<Seasons />} />
                 <Route path="seasons/:id" element={<SeasonManage />} />
+                <Route path="videos" element={<Videos />} />
+                <Route path="community" element={<Community />} />
                 <Route element={<PermissionGate core />}>
                   <Route path="shop" element={<Shop />} />
                   <Route path="markets" element={<Markets />} />

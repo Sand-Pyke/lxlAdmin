@@ -20,6 +20,9 @@ export const ADMIN_CAPABILITIES = [
   'signups.cancel',
   'signups.season.cancel',
   'seasons.view',
+  'videos.manage',
+  'community.moderate',
+  'signups.position',
   'markets.view',
   'markets.open',
   'markets.close',
@@ -55,6 +58,9 @@ const BASE: AdminCapability[] = [
   'draft.finish',
   'signups.view',
   'seasons.view',
+  'videos.manage',
+  'community.moderate',
+  'signups.position',
 ];
 export function adminRole(
   actor: Pick<Actor, 'isAdmin' | 'isSecondaryAdmin' | 'isCoreAdmin'>,

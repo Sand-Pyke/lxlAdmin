@@ -70,6 +70,7 @@ export type Signup = {
   main_pos: string;
   is_waitlisted: boolean;
   is_captain: boolean;
+  team_role?: string;
 };
 export type Season = {
   id: number;

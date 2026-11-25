@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { App, Button, Card, Input, Popconfirm, Select, Space, Table, Tag } from 'antd';
+import { App, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { post, request } from '../api/client';
 import type { Signup } from '../api/types';
 import { useViewer } from '../auth';
 import { can } from '../permissions/access';
+import { POSITION_OPTIONS, positionText } from '../data/draft-options';
 import { empty, label, QueryError, Refresh, tableScrollY } from '../components/shared';
 
 export default function Signups() {
@@ -13,6 +14,8 @@ export default function Signups() {
   const [search, setSearch] = useSearchParams();
   const [keyword, setKeyword] = useState('');
   const [page, setPage] = useState(1);
+  const [positionRow, setPositionRow] = useState<Signup | null>(null);
+  const [positionForm] = Form.useForm<{ main_pos: string; role?: 'STARTER' | 'SUB' }>();
   const client = useQueryClient();
   const { message } = App.useApp();
   const event = search.get('event') || '';
@@ -49,6 +52,26 @@ export default function Signups() {
     onError: (e) => {
       void message.error(e.message);
     },
+  });
+  const changePosition = useMutation({
+    mutationFn: (values: { main_pos: string; role?: 'STARTER' | 'SUB' }) => {
+      if (!positionRow) throw new Error('请先选择报名记录');
+      const season = positionRow.source === 'season';
+      return post(
+        `/api/admin/sign/position/${positionRow.sign_id}${season ? '?type=season' : ''}`,
+        season ? values : { main_pos: values.main_pos },
+      );
+    },
+    onSuccess: async () => {
+      setPositionRow(null);
+      void message.success('报名位置已更新');
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['signups'] }),
+        client.invalidateQueries({ queryKey: ['matches'] }),
+        client.invalidateQueries({ queryKey: ['season-board'] }),
+      ]);
+    },
+    onError: (error) => void message.error(error.message),
   });
   return (
     <>
@@ -124,28 +147,78 @@ export default function Signups() {
               },
               {
                 title: '操作',
-                render: (_, row) =>
-                  can(
-                    viewer,
-                    row.source === 'season' ? 'signups.season.cancel' : 'signups.cancel',
-                  ) ? (
-                    <Popconfirm
-                      title={`取消 ${row.username} 的报名？`}
-                      description="取消后可能触发候补递补，请核对赛事和选手。"
-                      onConfirm={() => cancel.mutateAsync(row).catch(() => undefined)}
-                    >
-                      <Button type="link" danger disabled={cancel.isPending}>
-                        取消报名
-                      </Button>
-                    </Popconfirm>
-                  ) : (
-                    <span className="muted">只读</span>
-                  ),
+                render: (_, row) => (
+                  <Space wrap size={4}>
+                    {can(viewer, 'signups.position') &&
+                      (row.source === 'match' || viewer.is_core_admin) && (
+                        <Button
+                          type="link"
+                          onClick={() => {
+                            positionForm.setFieldsValue({
+                              main_pos: POSITION_OPTIONS.includes(row.main_pos)
+                                ? row.main_pos
+                                : 'TOP',
+                              role: row.team_role === 'SUB' ? 'SUB' : 'STARTER',
+                            });
+                            setPositionRow(row);
+                          }}
+                        >
+                          更换位置
+                        </Button>
+                      )}
+                    {can(
+                      viewer,
+                      row.source === 'season' ? 'signups.season.cancel' : 'signups.cancel',
+                    ) ? (
+                      <Popconfirm
+                        title={`取消 ${row.username} 的报名？`}
+                        description="取消后可能触发候补递补，请核对赛事和选手。"
+                        onConfirm={() => cancel.mutateAsync(row).catch(() => undefined)}
+                      >
+                        <Button type="link" danger disabled={cancel.isPending}>
+                          取消报名
+                        </Button>
+                      </Popconfirm>
+                    ) : null}
+                  </Space>
+                ),
               },
             ]}
           />
         </Card>
       </div>
+      <Modal
+        title={positionRow ? `更换 ${positionRow.username} 的报名位置` : '更换报名位置'}
+        open={Boolean(positionRow)}
+        onCancel={() => setPositionRow(null)}
+        onOk={() => positionForm.submit()}
+        confirmLoading={changePosition.isPending}
+        closable={!changePosition.isPending}
+        mask={{ closable: !changePosition.isPending }}
+        cancelButtonProps={{ disabled: changePosition.isPending }}
+      >
+        <Form
+          form={positionForm}
+          layout="vertical"
+          onFinish={(values) => changePosition.mutate(values)}
+        >
+          <Form.Item label="报名分路" name="main_pos" rules={[{ required: true }]}>
+            <Select
+              options={POSITION_OPTIONS.map((value) => ({ value, label: positionText(value) }))}
+            />
+          </Form.Item>
+          {positionRow?.source === 'season' && (
+            <Form.Item label="报名身份" name="role" rules={[{ required: true }]}>
+              <Select
+                options={[
+                  { value: 'STARTER', label: '首发' },
+                  { value: 'SUB', label: '替补' },
+                ]}
+              />
+            </Form.Item>
+          )}
+        </Form>
+      </Modal>
     </>
   );
 }

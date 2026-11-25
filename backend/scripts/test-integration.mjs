@@ -241,6 +241,94 @@ try {
   const draftWithStats = await call(`/api/admin/pick/${match.id}`, { cookie: cookies.core });
   assert.equal(draftWithStats.status, 200);
   assert.equal((await draftWithStats.json()).leaderboard_ready, true);
+  await post(`/api/admin/match/set_fee/${match.id}`, cookies.core, { useFee: true });
+  assert.equal((await db.match.findUnique({ where: { id: match.id } })).useFee, true);
+
+  const season = await post('/api/admin/season/create', cookies.core, { name: 'Fixture season' });
+  const seasonId = season.id;
+  await db.teamSeason.update({ where: { id: seasonId }, data: { status: 'DRAFTING' } });
+  const first = await post('/api/admin/season/team/create', cookies.core, {
+    seasonId,
+    name: 'Fixture A',
+  });
+  const second = await post('/api/admin/season/team/create', cookies.core, {
+    seasonId,
+    name: 'Fixture B',
+  });
+  await post('/api/admin/season/team/update', cookies.core, {
+    teamId: first.id,
+    name: 'Fixture A',
+    abbr: 'A',
+  });
+  await db.teamSeasonSignup.createMany({
+    data: [target.id, actors.player.id].map((userId) => ({
+      seasonId,
+      userId,
+      mainPosition: 'TOP',
+    })),
+  });
+  await post('/api/admin/season/member/assign', cookies.core, {
+    seasonId,
+    teamId: first.id,
+    userId: target.id,
+    role: 'STARTER',
+    position: 'TOP',
+  });
+  await post('/api/admin/season/member/assign', cookies.core, {
+    seasonId,
+    teamId: first.id,
+    userId: actors.player.id,
+    role: 'SUB',
+    position: 'TOP',
+  });
+  const planned = await db.teamSeasonMatch.create({
+    data: { seasonId, scheduledAt: new Date(), teamOneId: first.id, teamTwoId: second.id },
+  });
+  await post('/api/admin/season/match/lineup', cookies.core, {
+    matchId: planned.id,
+    substitutions: [
+      { teamId: first.id, starterUserId: target.id, substituteUserId: actors.player.id },
+    ],
+  });
+  assert.equal(await db.teamSeasonMatchSubstitution.count({ where: { matchId: planned.id } }), 1);
+  await post('/api/admin/season/match/lineup', cookies.core, {
+    matchId: planned.id,
+    substitutions: [],
+  });
+  assert.equal(await db.teamSeasonMatchSubstitution.count({ where: { matchId: planned.id } }), 0);
+  await post('/api/admin/season/member/remove', cookies.core, {
+    seasonId,
+    userId: actors.player.id,
+  });
+  assert.equal(await db.teamSeasonMember.count({ where: { teamId: first.id } }), 1);
+
+  const comment = await db.communityComment.create({ data: { content: 'Fixture post' } });
+  const video = await db.video.create({
+    data: {
+      title: 'Fixture video',
+      objectKey: 'videos/v123_abcd.mp4',
+      mimeType: 'video/mp4',
+      size: 10,
+    },
+  });
+  for (const route of ['/api/admin/videos', '/api/admin/community']) {
+    assert.equal((await call(route)).status, 401);
+  }
+  const videos = await call('/api/admin/videos?pageSize=1', { cookie: cookies.admin });
+  assert.equal(videos.status, 200);
+  assert.equal((await videos.json()).videos[0].id, video.id);
+  const posts = await call('/api/admin/community?pageSize=1', { cookie: cookies.admin });
+  assert.equal(posts.status, 200);
+  assert.equal((await posts.json()).posts[0].id, comment.id);
+  assert.equal(
+    (await call(`/api/admin/community/${comment.id}`, { cookie: cookies.admin, method: 'DELETE' }))
+      .status,
+    200,
+  );
+  assert.equal(await db.communityComment.count(), 0);
+  console.log(
+    'PASS season roster and substitution reset, fee setting, video list and community moderation',
+  );
   for (const role of ['admin', 'reviewer'])
     assert.equal(
       (

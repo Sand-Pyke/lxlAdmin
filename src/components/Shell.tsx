@@ -14,6 +14,8 @@ import {
   TeamOutlined,
   TrophyOutlined,
   UserOutlined,
+  VideoCameraOutlined,
+  CommentOutlined,
 } from '@ant-design/icons';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -32,6 +34,8 @@ const items = [
   { key: '/shop', icon: <ShoppingOutlined />, label: '商品管理' },
   { key: '/recharge', icon: <WalletOutlined />, label: '冠军币充值' },
   { key: '/sponsors', icon: <GoldOutlined />, label: '赞助管理' },
+  { key: '/videos', icon: <VideoCameraOutlined />, label: '视频管理' },
+  { key: '/community', icon: <CommentOutlined />, label: '社区管理' },
 ];
 export default function Shell() {
   const viewer = useViewer();

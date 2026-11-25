@@ -203,6 +203,12 @@ export type BoardSign = {
   team_pos: string;
   pos_order: number;
   is_captain: boolean;
+  can_substitute: boolean;
+  fee: number;
+  fee_card_active?: boolean;
+  fee_card_used?: boolean;
+  draft_rank?: string;
+  draft_fee?: number;
 };
 export type MatchBoard = {
   match: {

@@ -14,7 +14,13 @@ import {
   Tag,
   Typography,
 } from 'antd';
-import { CalendarOutlined, EditOutlined, ReloadOutlined, SwapOutlined, TrophyOutlined } from '@ant-design/icons';
+import {
+  CalendarOutlined,
+  EditOutlined,
+  ReloadOutlined,
+  SwapOutlined,
+  TrophyOutlined,
+} from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { post } from '../api/client';
@@ -27,6 +33,8 @@ import {
 } from '../api/seasons';
 import { useViewer } from '../auth';
 import { QueryError, Refresh, Status, dateText } from '../components/shared';
+import SeasonTeams from '../components/SeasonTeams';
+import SeasonLineup from '../components/SeasonLineup';
 
 const TIME_ZONE = 'Asia/Shanghai';
 function beijingLocalInput(iso: string): string {
@@ -57,6 +65,7 @@ export default function SeasonManage() {
   const isCoreAdmin = Boolean(viewer?.is_core_admin);
 
   const [scoreMatchId, setScoreMatchId] = useState<number | null>(null);
+  const [lineupMatchId, setLineupMatchId] = useState<number | null>(null);
   const [scoreOne, setScoreOne] = useState(0);
   const [scoreTwo, setScoreTwo] = useState(0);
   const [scheduleMatchId, setScheduleMatchId] = useState<number | null>(null);
@@ -90,9 +99,10 @@ export default function SeasonManage() {
 
   const isDrafting = board?.season.status === 'DRAFTING';
   const teamCount = board?.teams.length ?? 0;
-  const pointsAllDone = (board?.matches ?? []).filter(
-    (match) => match.phase === 'POINTS' && match.status !== 'FINISHED',
-  ).length === 0;
+  const pointsAllDone =
+    (board?.matches ?? []).filter(
+      (match) => match.phase === 'POINTS' && match.status !== 'FINISHED',
+    ).length === 0;
   const swissMatches = useMemo(
     () => (board?.matches ?? []).filter((match) => match.phase === 'SWISS'),
     [board],
@@ -100,11 +110,15 @@ export default function SeasonManage() {
   const swissRound = swissMatches.length ? Math.max(...swissMatches.map((m) => m.round_no)) : 0;
   const swissRoundDone =
     swissMatches.length > 0 &&
-    swissMatches.filter((match) => match.round_no === swissRound).every((m) => m.status === 'FINISHED');
+    swissMatches
+      .filter((match) => match.round_no === swissRound)
+      .every((m) => m.status === 'FINISHED');
   const swissStandingsRows = board?.swiss_standings ?? [];
   const swissQualifiedCount = swissStandingsRows.filter((row) => row.wins >= 3).length;
   const swissEliminatedCount = swissStandingsRows.filter((row) => row.losses >= 3).length;
-  const swissActiveCount = swissStandingsRows.filter((row) => row.wins < 3 && row.losses < 3).length;
+  const swissActiveCount = swissStandingsRows.filter(
+    (row) => row.wins < 3 && row.losses < 3,
+  ).length;
   const swissFinished = swissRoundDone && swissActiveCount === 0 && swissQualifiedCount === 4;
 
   const playoffMatches = (board?.matches ?? []).filter((match) => match.phase === 'PLAYOFF');
@@ -121,9 +135,10 @@ export default function SeasonManage() {
     return map;
   }, [board]);
 
-  const championTeam = board?.season.status === 'FINISHED'
-    ? board.teams.find((team) => team.final_rank === 1) ?? null
-    : null;
+  const championTeam =
+    board?.season.status === 'FINISHED'
+      ? (board.teams.find((team) => team.final_rank === 1) ?? null)
+      : null;
 
   const scheduleSections = useMemo(() => {
     const isNirvanaMatch = (match: SeasonMatch) =>
@@ -182,16 +197,24 @@ export default function SeasonManage() {
 
   if (!Number.isInteger(seasonId) || seasonId <= 0) {
     return (
-      <Alert type="error" showIcon title="赛事编号无效" action={<Button href="/seasons">返回列表</Button>} />
+      <Alert
+        type="error"
+        showIcon
+        title="赛事编号无效"
+        action={<Button href="/seasons">返回列表</Button>}
+      />
     );
   }
 
   const scoreMatch =
-    scoreMatchId !== null ? (board?.matches ?? []).find((match) => match.id === scoreMatchId) : null;
+    scoreMatchId !== null
+      ? (board?.matches ?? []).find((match) => match.id === scoreMatchId)
+      : null;
   const scheduleMatch =
     scheduleMatchId !== null
       ? (board?.matches ?? []).find((match) => match.id === scheduleMatchId)
       : null;
+  const lineupMatch = board?.matches.find((match) => match.id === lineupMatchId);
 
   return (
     <>
@@ -199,7 +222,8 @@ export default function SeasonManage() {
         <div>
           <Typography.Title level={2}>战队赛管理</Typography.Title>
           <p>
-            <Link to="/seasons">战队赛事</Link> · {board ? `${board.season.name}（#${seasonId}）` : '加载中…'}
+            <Link to="/seasons">战队赛事</Link> ·{' '}
+            {board ? `${board.season.name}（#${seasonId}）` : '加载中…'}
           </p>
         </div>
         <Space wrap>
@@ -221,7 +245,9 @@ export default function SeasonManage() {
               <Space wrap>
                 <Status value={board.season.status} />
                 {board.season.start_date ? (
-                  <Typography.Text type="secondary">{dateText(board.season.start_date)}</Typography.Text>
+                  <Typography.Text type="secondary">
+                    {dateText(board.season.start_date)}
+                  </Typography.Text>
                 ) : null}
                 {championTeam ? (
                   <Tag color="gold" icon={<TrophyOutlined />}>
@@ -301,7 +327,9 @@ export default function SeasonManage() {
                       生成涅槃组四强（BO5）
                     </Button>
                   ) : null}
-                  {board.season.status === 'PLAYOFFS' && nirvanaSemifinalsDone && !swissMatches.length ? (
+                  {board.season.status === 'PLAYOFFS' &&
+                  nirvanaSemifinalsDone &&
+                  !swissMatches.length ? (
                     <Button
                       size="small"
                       type="primary"
@@ -380,7 +408,10 @@ export default function SeasonManage() {
 
           <Card className="content-card" title={`赛程与战果（${board.matches.length} 场）`}>
             {isCoreAdmin && board.matches.some((m) => m.status !== 'FINISHED') ? (
-              <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+              <Typography.Text
+                type="secondary"
+                style={{ fontSize: 12, display: 'block', marginBottom: 8 }}
+              >
                 可对未结束的场次调整开赛时间或交换赛程位置。
               </Typography.Text>
             ) : null}
@@ -408,7 +439,12 @@ export default function SeasonManage() {
                     nirvanaSemifinals.length === 2 &&
                     nirvanaSemifinals.every((match) => match.status === 'CREATED') &&
                     isCoreAdmin ? (
-                      <Button size="small" icon={<SwapOutlined />} style={{ marginInlineStart: 10 }} onClick={openNirvanaPairing}>
+                      <Button
+                        size="small"
+                        icon={<SwapOutlined />}
+                        style={{ marginInlineStart: 10 }}
+                        onClick={openNirvanaPairing}
+                      >
                         调整四强对阵
                       </Button>
                     ) : null}
@@ -417,7 +453,9 @@ export default function SeasonManage() {
                         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                           {group.label}
                         </Typography.Text>
-                        <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div
+                          style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 8 }}
+                        >
                           {group.matches.map((match) => (
                             <div
                               key={match.id}
@@ -438,7 +476,13 @@ export default function SeasonManage() {
                               <Tag>{match.bo}</Tag>
                               <Tag color="blue">{seasonMatchStageLabel(match)}</Tag>
                               {divisionByTeamId.get(match.team_one_id) ? (
-                                <Tag color={divisionByTeamId.get(match.team_one_id) === 'APEX' ? 'volcano' : 'geekblue'}>
+                                <Tag
+                                  color={
+                                    divisionByTeamId.get(match.team_one_id) === 'APEX'
+                                      ? 'volcano'
+                                      : 'geekblue'
+                                  }
+                                >
                                   {DIVISION_LABEL[divisionByTeamId.get(match.team_one_id)!]}
                                 </Tag>
                               ) : null}
@@ -455,6 +499,20 @@ export default function SeasonManage() {
                               )}
                               <Space size={4} style={{ marginInlineStart: 'auto' }}>
                                 {isCoreAdmin &&
+                                  match.status !== 'FINISHED' &&
+                                  !match.score_one &&
+                                  !match.score_two &&
+                                  match.team_one &&
+                                  match.team_two && (
+                                    <Button
+                                      size="small"
+                                      type="link"
+                                      onClick={() => setLineupMatchId(match.id)}
+                                    >
+                                      调整阵容
+                                    </Button>
+                                  )}
+                                {isCoreAdmin &&
                                 ['POINTS', 'SWISS', 'PLAYOFFS'].includes(board.season.status) &&
                                 match.status !== 'FINISHED' ? (
                                   <Button size="small" type="link" onClick={() => openScore(match)}>
@@ -462,17 +520,32 @@ export default function SeasonManage() {
                                   </Button>
                                 ) : null}
                                 {isCoreAdmin && match.status === 'FINISHED' ? (
-                                  <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openScore(match)}>
+                                  <Button
+                                    size="small"
+                                    type="link"
+                                    icon={<EditOutlined />}
+                                    onClick={() => openScore(match)}
+                                  >
                                     修改比分
                                   </Button>
                                 ) : null}
                                 {isCoreAdmin ? (
-                                  <Button size="small" type="link" icon={<CalendarOutlined />} onClick={() => openSchedule(match)}>
+                                  <Button
+                                    size="small"
+                                    type="link"
+                                    icon={<CalendarOutlined />}
+                                    onClick={() => openSchedule(match)}
+                                  >
                                     开赛时间
                                   </Button>
                                 ) : null}
                                 {isCoreAdmin && match.status !== 'FINISHED' ? (
-                                  <Button size="small" type="link" icon={<SwapOutlined />} onClick={() => openSwap(match)}>
+                                  <Button
+                                    size="small"
+                                    type="link"
+                                    icon={<SwapOutlined />}
+                                    onClick={() => openSwap(match)}
+                                  >
                                     交换
                                   </Button>
                                 ) : null}
@@ -491,7 +564,12 @@ export default function SeasonManage() {
                                       })
                                     }
                                   >
-                                    <Button size="small" type="link" danger icon={<ReloadOutlined />}>
+                                    <Button
+                                      size="small"
+                                      type="link"
+                                      danger
+                                      icon={<ReloadOutlined />}
+                                    >
                                       重置
                                     </Button>
                                   </Popconfirm>
@@ -510,22 +588,16 @@ export default function SeasonManage() {
             )}
           </Card>
 
-          <Card className="content-card" title="战队">
-            {board.teams.length ? (
-              <Space wrap>
-                {board.teams.map((team) => (
-                  <Tag key={team.id}>
-                    {team.name}
-                    {team.abbr ? `（${team.abbr}）` : ''} · {team.members.length} 人
-                    {team.division ? ` · ${DIVISION_LABEL[team.division]}` : ''}
-                    {team.final_rank ? ` · 第 ${team.final_rank} 名` : ''}
-                  </Tag>
-                ))}
-              </Space>
-            ) : (
-              <Empty description="还没有战队" />
-            )}
-          </Card>
+          <SeasonTeams board={board} core={isCoreAdmin} onChanged={invalidate} />
+          {lineupMatch && (
+            <SeasonLineup
+              key={lineupMatch.id}
+              match={lineupMatch}
+              teams={board.teams}
+              onClose={() => setLineupMatchId(null)}
+              onChanged={invalidate}
+            />
+          )}
 
           <Card className="content-card" title="冠军池">
             <Space wrap>
@@ -560,9 +632,19 @@ export default function SeasonManage() {
             }}
           >
             <Space size={12}>
-              <InputNumber min={0} max={3} value={scoreOne} onChange={(v) => setScoreOne(Number(v) || 0)} />
+              <InputNumber
+                min={0}
+                max={3}
+                value={scoreOne}
+                onChange={(v) => setScoreOne(Number(v) || 0)}
+              />
               <span>:</span>
-              <InputNumber min={0} max={3} value={scoreTwo} onChange={(v) => setScoreTwo(Number(v) || 0)} />
+              <InputNumber
+                min={0}
+                max={3}
+                value={scoreTwo}
+                onChange={(v) => setScoreTwo(Number(v) || 0)}
+              />
             </Space>
           </Modal>
 
@@ -677,7 +759,9 @@ export default function SeasonManage() {
                       label: `${team.name}${team.abbr ? `（${team.abbr}）` : ''}`,
                     }))}
                     onChange={(teamOneId) =>
-                      setPairForm((prev) => prev.map((item, i) => (i === index ? { ...item, teamOneId } : item)))
+                      setPairForm((prev) =>
+                        prev.map((item, i) => (i === index ? { ...item, teamOneId } : item)),
+                      )
                     }
                   />
                   <span>vs</span>
@@ -690,7 +774,9 @@ export default function SeasonManage() {
                       label: `${team.name}${team.abbr ? `（${team.abbr}）` : ''}`,
                     }))}
                     onChange={(teamTwoId) =>
-                      setPairForm((prev) => prev.map((item, i) => (i === index ? { ...item, teamTwoId } : item)))
+                      setPairForm((prev) =>
+                        prev.map((item, i) => (i === index ? { ...item, teamTwoId } : item)),
+                      )
                     }
                   />
                 </div>
@@ -732,7 +818,9 @@ export default function SeasonManage() {
                     max={1000000}
                     style={{ width: 180 }}
                     value={prizeForm[place] ?? 0}
-                    onChange={(value) => setPrizeForm((prev) => ({ ...prev, [place]: Number(value ?? 0) }))}
+                    onChange={(value) =>
+                      setPrizeForm((prev) => ({ ...prev, [place]: Number(value ?? 0) }))
+                    }
                     suffix="冠军币 / 人"
                   />
                 </div>

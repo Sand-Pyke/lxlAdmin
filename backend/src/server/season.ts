@@ -711,10 +711,7 @@ export async function updateSeasonMatchSubstitutions(
       }
 
       const teamIds = [match.teamOneId, match.teamTwoId];
-      if (
-        replacements.length === 0 ||
-        replacements.some((replacement) => !teamIds.includes(replacement.teamId))
-      ) {
+      if (replacements.some((replacement) => !teamIds.includes(replacement.teamId))) {
         throw badRequest('替补调整参数无效');
       }
 

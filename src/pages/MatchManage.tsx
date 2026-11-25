@@ -11,6 +11,7 @@ import {
   Select,
   Space,
   Spin,
+  Switch,
   Tag,
   Typography,
 } from 'antd';
@@ -23,6 +24,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { post } from '../api/client';
+import { RosterPanel } from '../components/MatchRoster';
 import {
   BO_OPTIONS,
   BO_WINS,
@@ -78,6 +80,7 @@ export default function MatchManage() {
   const statusGate = (disabled: boolean) => (isCoreAdmin ? false : disabled);
 
   const [statusOpen, setStatusOpen] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
   const [statusValue, setStatusValue] = useState('CREATED');
   const [liveOpen, setLiveOpen] = useState(false);
   const [liveValue, setLiveValue] = useState('');
@@ -242,6 +245,21 @@ export default function MatchManage() {
                 <Typography.Text type="secondary">基础信息</Typography.Text>
                 <Status value={board.match.status} />
                 <Tag>{board.match.bo}</Tag>
+                <Switch
+                  aria-label="赛事计费"
+                  checked={board.match.use_fee}
+                  checkedChildren="计费"
+                  unCheckedChildren="免计费"
+                  loading={run.isPending}
+                  disabled={statusGate(board.match.status !== 'CREATED')}
+                  onChange={(useFee) =>
+                    run.mutate({
+                      url: `/api/admin/match/set_fee/${matchId}`,
+                      body: { useFee },
+                      fallback: '选费设置已更新',
+                    })
+                  }
+                />
                 <Tag>{board.match.round || '未设置阶段'}</Tag>
                 {board.match.captain_position ? (
                   <Tag color="gold">队长分路：{label(board.match.captain_position)}</Tag>
@@ -414,6 +432,11 @@ export default function MatchManage() {
                     查看对阵
                   </Button>
                 ) : null}
+                {can(viewer, 'draft.control') && (
+                  <Button size="small" onClick={() => setRosterOpen((open) => !open)}>
+                    {rosterOpen ? '收起队伍管理' : '管理队伍'}
+                  </Button>
+                )}
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   共 {board.match.team_count} 支队伍
                 </Typography.Text>
@@ -436,6 +459,9 @@ export default function MatchManage() {
               )}
             </Space>
           </Card>
+          {rosterOpen && can(viewer, 'draft.control') && (
+            <RosterPanel board={board} loading={boardQuery.isFetching} onReload={invalidate} />
+          )}
 
           <Modal
             title={`编辑赛事 · ${board.match.name}`}

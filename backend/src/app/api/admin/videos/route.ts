@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withApiErrors } from '@/server/api';
+import { adminRoute, withApiErrors } from '@/server/api';
 import { requireAdmin } from '@/server/auth';
-import { addVideo } from '@/server/videos';
+import { addVideo, listVideos } from '@/server/videos';
 
 export const dynamic = 'force-dynamic';
+
+export const GET = adminRoute(async ({ query }) =>
+  listVideos(Number(query.get('page')), Number(query.get('pageSize') ?? 12)),
+);
 
 /** 视频上传：仅管理员。multipart 字段：file（必填）、title（必填）、description（可选）。 */
 export async function POST(request: NextRequest) {
