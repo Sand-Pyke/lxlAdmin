@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { banNotice } from '@/lib/ban';
 import { missingSignupRequirements } from '@/lib/profile-requirements';
 import { getSessionUser, getViewer } from '@/server/auth';
-import { SIX_TEAM_FORMAT, SIX_TEAM_FORMAT_V2, isOffRole } from '@/lib/admin-options';
+import { matchTeamLimit, isOffRole } from '@/lib/admin-options';
 import { activeTitleMap } from '@/server/records';
 import { getMatchRegistrationSnapshot } from '@/server/match-registration';
 import { isLineupReady, LINEUP_PENDING_MESSAGE } from '@/lib/lineup-readiness';
@@ -97,6 +97,7 @@ function placementLabel(
   match: {
     bo: string;
     teamCount: number;
+    customTeamCount?: number;
     championTeamId: number | null;
     runnerupTeamId: number | null;
   },
@@ -110,7 +111,7 @@ function placementLabel(
     return Math.max(max, row.roundNo);
   }, 0);
   if (!lastRound) return null;
-  if (match.bo === SIX_TEAM_FORMAT || match.bo === SIX_TEAM_FORMAT_V2) {
+  if (matchTeamLimit(match.bo, match.customTeamCount) === 6) {
     if (lastRound === 1) return '六强';
     if (lastRound === 2) return '四强';
     return null;
@@ -318,6 +319,9 @@ export async function getMatchDetail(request: NextRequest, id: string | number) 
       team_count: match.teamCount,
       live_url: match.liveUrl,
       bo: match.bo,
+      custom_team_count: match.customTeamCount,
+      round_formats: match.roundFormats,
+      min_signup_rank: match.minSignupRank,
       round: match.round,
       use_fee: match.useFee,
       current_round: match.currentRound,
@@ -539,6 +543,8 @@ export async function getMatchRoundsData(id: string | number) {
         lineup_ready: false,
         rounds: [],
         format: match.bo || 'BO1',
+        custom_team_count: match.customTeamCount,
+        round_formats: match.roundFormats,
         current_round: 1,
         total_rounds: 0,
         champion_team_id: null,
@@ -638,6 +644,8 @@ export async function getMatchRoundsData(id: string | number) {
       rounds: out,
       lineup_ready: true,
       format: match.bo || 'BO1',
+      custom_team_count: match.customTeamCount,
+      round_formats: match.roundFormats,
       current_round: liveRound,
       total_rounds: totalRounds,
       champion_team_id: championTeamId,

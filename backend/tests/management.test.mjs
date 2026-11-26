@@ -105,10 +105,10 @@ test('Diamond+ writes through the migrated service and updates profile and signu
   assert.equal(db.writes.length, 0);
 });
 
-test('deleting a match is denied in the domain layer before any mutation for non-core actors', async () => {
+test('deleting a match is denied in the domain layer before any mutation for actors below secondary admin', async () => {
   const db = database();
   const admin = sourceLoader(db)('server/admin.ts');
-  for (const actor of [undefined, 2, 3, 53]) {
+  for (const actor of [undefined, 3, 53]) {
     await assert.rejects(admin.deleteMatch(1, actor), (error) => error.status === 403);
   }
   assert.equal(db.writes.length, 0);

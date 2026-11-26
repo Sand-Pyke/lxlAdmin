@@ -4,6 +4,7 @@ import { PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { params, post, request } from '../api/client';
+import { matchFormatLabel } from '../api/matches';
 import type { Match, MatchesResponse } from '../api/types';
 import Permit from '../components/Permit';
 import { useViewer } from '../auth';
@@ -18,9 +19,14 @@ import {
   tableScrollY,
 } from '../components/shared';
 
-type MatchForm = {
+import {
+  defaultCustomFormat,
+  MatchFormatFields,
+  type MatchFormatValues,
+} from '../components/MatchFormatFields';
+
+type MatchForm = MatchFormatValues & {
   name: string;
-  bo: string;
   round: string;
   date?: string;
   use_fee: boolean;
@@ -155,7 +161,7 @@ export default function Matches() {
                 ),
               },
               { title: '状态', dataIndex: 'status', render: (value) => <Status value={value} /> },
-              { title: '赛制', dataIndex: 'bo' },
+              { title: '赛制', dataIndex: 'bo', render: (bo: string) => matchFormatLabel(bo) },
               {
                 title: '选手 / 队伍',
                 render: (_, row) => `${row.player_count} 人 / ${row.team_count} 队`,
@@ -200,7 +206,8 @@ export default function Matches() {
           layout="vertical"
           requiredMark={false}
           initialValues={{
-            bo: 'BO1',
+            bo: 'BO3',
+            ...defaultCustomFormat,
             round: '常规赛',
             use_fee: true,
             captain_position: '',
@@ -219,19 +226,7 @@ export default function Matches() {
           >
             <Input placeholder="例如：LXL 周末常规赛" maxLength={100} />
           </Form.Item>
-          <Form.Item name="bo" label="赛制" rules={[{ required: true }]}>
-            <Select
-              options={[
-                'BO1',
-                'BO3',
-                'BO5',
-                '六队模式',
-                '六队模式2.0',
-                '八队模式',
-                '八队模式2.0',
-              ].map((value) => ({ value, label: value }))}
-            />
-          </Form.Item>
+          <MatchFormatFields form={form} />
           <Form.Item name="round" label="赛事轮次" rules={[{ required: true, whitespace: true }]}>
             <Input maxLength={40} />
           </Form.Item>

@@ -1,3 +1,4 @@
+import { matchFormatLabel } from '../api/matches';
 import { useQuery } from '@tanstack/react-query';
 import { Button, Card, Col, Row, Space, Statistic, Table, Tag } from 'antd';
 import {
@@ -136,7 +137,7 @@ export default function Dashboard() {
                         {name}
                       </span>
                       <small>
-                        {row.bo} · {row.round}
+                        {matchFormatLabel(row.bo)} · {row.round}
                       </small>
                     </div>
                   ),

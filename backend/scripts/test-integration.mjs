@@ -244,6 +244,151 @@ try {
   await post(`/api/admin/match/set_fee/${match.id}`, cookies.core, { useFee: true });
   assert.equal((await db.match.findUnique({ where: { id: match.id } })).useFee, true);
 
+  const customBody = {
+    name: 'Custom tournament fixture',
+    bo: '自定义赛事',
+    custom_team_count: 6,
+    round_formats: ['BO5', 'BO1', 'BO3'],
+    min_signup_rank: '钻石',
+    use_fee: false,
+  };
+  const invalidCustom = await call('/api/admin/match/create', {
+    method: 'POST',
+    cookie: cookies.admin,
+    body: { ...customBody, round_formats: ['BO5'] },
+  });
+  assert.equal(invalidCustom.status, 400);
+  const { id: customId } = await post('/api/admin/match/create', cookies.admin, customBody);
+  const customFormatRoute = `/api/admin/match/set_bo/${customId}`;
+  await post(customFormatRoute, cookies.admin, { ...customBody, custom_team_count: 8 });
+  assert.equal((await db.match.findUnique({ where: { id: customId } })).customTeamCount, 8);
+  await post(customFormatRoute, cookies.admin, customBody);
+  const board = await (
+    await call(`/api/admin/teams/${customId}`, { cookie: cookies.admin })
+  ).json();
+  assert.equal(board.match.custom_team_count, 6);
+  assert.equal(board.match.total_rounds, 3);
+  assert.deepEqual(board.match.round_formats, customBody.round_formats);
+  assert.equal(board.match.allow_item_cards, true);
+  assert.equal(board.match.min_signup_rank, '钻石');
+  const incomplete = await call(`/api/admin/match/finish_pick/${customId}`, {
+    method: 'POST',
+    cookie: cookies.core,
+    body: {},
+  });
+  assert.equal(incomplete.status, 400);
+  for (let index = 0; index < 6; index++) {
+    await post('/api/admin/team/create', cookies.core, {
+      matchId: customId,
+      name: `Custom ${index}`,
+    });
+  }
+  const customTeams = await db.team.findMany({
+    where: { matchId: customId },
+    orderBy: { sortOrder: 'asc' },
+  });
+  const extraTeam = await call('/api/admin/team/create', {
+    method: 'POST',
+    cookie: cookies.core,
+    body: { matchId: customId, name: 'Extra custom team' },
+  });
+  assert.equal(extraTeam.status, 400);
+  const positions = ['TOP', 'JUG', 'MID', 'ADC', 'SUP'];
+  const players = await db.user.createManyAndReturn({
+    data: Array.from({ length: 30 }, (_, index) => ({
+      username: `custom-player-${index}`,
+      passwordHash,
+    })),
+  });
+  await db.matchSignup.createMany({
+    data: players.map((user, index) => ({
+      matchId: customId,
+      userId: user.id,
+      teamId: customTeams[Math.floor(index / 5)].id,
+      mainPosition: positions[index % 5],
+      teamPosition: positions[index % 5],
+      rankAtSignup: '钻石',
+    })),
+  });
+  const reserved = await db.heroProtectionCard.create({
+    data: { ownerId: players[0].id, awardType: 'SHOP' },
+  });
+  await db.matchHeroProtection.create({
+    data: {
+      matchId: customId,
+      teamId: customTeams[0].id,
+      ownerId: players[0].id,
+      cardId: reserved.id,
+      heroName: '安妮',
+    },
+  });
+  const consumed = await db.heroProtectionCard.create({
+    data: {
+      ownerId: players[1].id,
+      awardType: 'SHOP',
+      usedMatchId: customId,
+      consumedAt: new Date(),
+    },
+  });
+  const disable = { ...customBody, allow_item_cards: false };
+  const blocked = await call(customFormatRoute, {
+    method: 'POST',
+    cookie: cookies.admin,
+    body: disable,
+  });
+  assert.equal(blocked.status, 400);
+  assert.match((await blocked.json()).msg, /已有道具卡使用记录/);
+  assert.equal(await db.matchHeroProtection.count({ where: { matchId: customId } }), 1);
+  await db.heroProtectionCard.delete({ where: { id: consumed.id } });
+  await post(customFormatRoute, cookies.admin, disable);
+  await post(customFormatRoute, cookies.admin, customBody);
+  assert.equal((await db.match.findUnique({ where: { id: customId } })).allowItemCards, false);
+  assert.equal(await db.matchHeroProtection.count({ where: { matchId: customId } }), 0);
+  assert.equal(
+    (await db.heroProtectionCard.findUnique({ where: { id: reserved.id } })).consumedAt,
+    null,
+  );
+  await post(`/api/admin/match/finish_pick/${customId}`, cookies.core, {});
+  for (let index = 0; index < 6; index += 2) {
+    const body = {
+      matchId: customId,
+      roundNo: 1,
+      teamOneId: customTeams[index].id,
+      teamTwoId: customTeams[index + 1].id,
+      scoreOne: 3,
+      scoreTwo: 1,
+    };
+    await post('/api/admin/match/score', cookies.core, body);
+  }
+  const noWildcard = await call(`/api/admin/match/round/end/${customId}`, {
+    method: 'POST',
+    cookie: cookies.core,
+    body: { roundNo: 1 },
+  });
+  assert.equal(noWildcard.status, 400);
+  await post(`/api/admin/match/round/end/${customId}`, cookies.core, {
+    roundNo: 1,
+    wildcardTeamId: customTeams[1].id,
+  });
+  const semi = await db.matchRound.findMany({ where: { matchId: customId, roundNo: 2 } });
+  assert.equal(semi.length, 2);
+  const wrongScore = await call('/api/admin/match/score', {
+    method: 'POST',
+    cookie: cookies.core,
+    body: {
+      matchId: customId,
+      roundNo: 2,
+      teamOneId: semi[0].teamOneId,
+      teamTwoId: semi[0].teamTwoId,
+      scoreOne: 3,
+      scoreTwo: 1,
+    },
+  });
+  assert.equal(wrongScore.status, 400);
+  console.log(
+    'PASS custom tournament validation, team capacity, round formats and six-team wildcard',
+  );
+
   const season = await post('/api/admin/season/create', cookies.core, { name: 'Fixture season' });
   const seasonId = season.id;
   await db.teamSeason.update({ where: { id: seasonId }, data: { status: 'DRAFTING' } });
@@ -329,22 +474,31 @@ try {
   console.log(
     'PASS season roster and substitution reset, fee setting, video list and community moderation',
   );
-  for (const role of ['admin', 'reviewer'])
-    assert.equal(
-      (
-        await call(`/api/admin/match/delete/${match.id}`, {
-          method: 'POST',
-          cookie: cookies[role],
-          body: {},
-        })
-      ).status,
-      403,
-    );
-  assert.ok(await db.match.findUnique({ where: { id: match.id } }));
-  await post(`/api/admin/match/delete/${match.id}`, cookies.core, {});
+  const deleteRoute = `/api/admin/match/delete/${match.id}`;
+  assert.ok(
+    (
+      await (await call('/api/admin/permissions', { cookie: cookies.reviewer })).json()
+    ).permissions.includes('matches.delete'),
+  );
+  assert.equal(
+    (await call(deleteRoute, { method: 'POST', cookie: cookies.admin, body: {} })).status,
+    403,
+  );
+  for (const status of ['LIVE', 'FINISHED']) {
+    await db.match.update({ where: { id: match.id }, data: { status } });
+    for (const role of ['reviewer', 'core']) {
+      assert.equal(
+        (await call(deleteRoute, { method: 'POST', cookie: cookies[role], body: {} })).status,
+        400,
+      );
+      assert.ok(await db.match.findUnique({ where: { id: match.id } }));
+    }
+  }
+  await db.match.update({ where: { id: match.id }, data: { status: 'CREATED' } });
+  await post(deleteRoute, cookies.reviewer, {});
   assert.equal(await db.match.findUnique({ where: { id: match.id } }), null);
   console.log(
-    'PASS real approval, Diamond+ profile/signup synchronization and core-only match deletion',
+    'PASS real approval, Diamond+ synchronization and secondary admin draft match deletion',
   );
   for (const route of ['/api/admin/shop', '/api/admin/markets']) {
     assert.equal((await call(route, { cookie: cookies.core })).status, 200);

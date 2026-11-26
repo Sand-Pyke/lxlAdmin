@@ -1,14 +1,9 @@
-import {
-  EIGHT_TEAM_FORMAT,
-  EIGHT_TEAM_FORMAT_V2,
-  SIX_TEAM_FORMAT,
-  SIX_TEAM_FORMAT_V2,
-} from './admin-options';
+import { matchTeamLimit } from './admin-options';
 
 export const LINEUP_PENDING_MESSAGE = '队伍编排尚未完成，全部队伍编排完成后开放对阵';
 
 export function isLineupReady(
-  match: { status: string; bo: string },
+  match: { status: string; bo: string; customTeamCount?: number },
   teams: readonly { id: number }[],
   signups: readonly {
     teamId: number | null;
@@ -19,16 +14,7 @@ export function isLineupReady(
 ) {
   // Historical fixtures remain viewable even if their signup roster was later changed.
   if (match.status !== 'CREATED') return true;
-  const expected =
-    match.bo === 'BO5'
-      ? 2
-      : match.bo === 'BO3'
-        ? 4
-        : [SIX_TEAM_FORMAT, SIX_TEAM_FORMAT_V2].includes(match.bo)
-          ? 6
-          : [EIGHT_TEAM_FORMAT, EIGHT_TEAM_FORMAT_V2].includes(match.bo)
-            ? 8
-            : null;
+  const expected = matchTeamLimit(match.bo, match.customTeamCount);
   if (expected ? teams.length !== expected : teams.length < 2 || teams.length % 2 !== 0)
     return false;
   const positions = ['TOP', 'JUG', 'MID', 'ADC', 'SUP'];

@@ -3,10 +3,11 @@ import { prisma } from '@/lib/prisma';
 import { RANK_FEES, reducedDraftRank } from '@/lib/fee-reduction';
 import { badRequest } from '@/server/api';
 import {
-  EIGHT_TEAM_FORMAT,
-  EIGHT_TEAM_FORMAT_V2,
-  SIX_TEAM_FORMAT,
-  SIX_TEAM_FORMAT_V2,
+  CUSTOM_FORMAT,
+  boForRound,
+  boScoreHint,
+  isValidBoScore,
+  matchTeamLimit,
 } from '@/lib/admin-options';
 import { statusStillBlocked } from '@/server/permissions';
 import { awardHeroProtectionCard } from '@/server/hero-protection';
@@ -196,14 +197,13 @@ export async function endRound(
     where: activeMatchTeamWhere(matchId),
     orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
   });
-  const sixTeamMode = match.bo === SIX_TEAM_FORMAT || match.bo === SIX_TEAM_FORMAT_V2;
-  const eightTeamMode = match.bo === EIGHT_TEAM_FORMAT || match.bo === EIGHT_TEAM_FORMAT_V2;
+  const teamLimit = matchTeamLimit(match.bo, match.customTeamCount);
+  const sixTeamMode = teamLimit === 6;
+  const fixedTeamCount = match.bo === CUSTOM_FORMAT || teamLimit === 6 || teamLimit === 8;
   if (
-    sixTeamMode
-      ? teams.length !== 6
-      : eightTeamMode
-        ? teams.length !== 8
-        : !isBracketTeamCount(teams.length) || teams.length === 6
+    fixedTeamCount
+      ? teams.length !== teamLimit
+      : !isBracketTeamCount(teams.length) || teams.length === 6
   ) {
     return { kind: 'bad_team_count' as const };
   }
@@ -403,6 +403,12 @@ export async function setScore(input: {
     async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "Match" WHERE "id" = ${input.matchId} FOR UPDATE`;
       const { matchId, roundNo, teamOneId, teamTwoId, scoreOne, scoreTwo } = input;
+      const match = await tx.match.findUnique({ where: { id: matchId } });
+      if (match?.bo === CUSTOM_FORMAT) {
+        if (roundNo > match.roundFormats.length) throw badRequest('轮次超出本场自定义赛程');
+        const bo = boForRound(match.bo, roundNo, match.roundFormats);
+        if (!isValidBoScore(bo, scoreOne, scoreTwo)) throw badRequest(boScoreHint(bo));
+      }
       const direct = await tx.matchScore.findUnique({
         where: {
           matchId_roundNo_teamOneId_teamTwoId: { matchId, roundNo, teamOneId, teamTwoId },
@@ -593,25 +599,33 @@ async function ensureTeamCaptain(teamId: number, db: Prisma.TransactionClient = 
 }
 
 export async function createTeam(matchId: number, name: string, actorId?: number) {
-  const match = await prisma.match.findUnique({ where: { id: matchId } });
-  if (!match) return { kind: 'match_not_found' as const };
-  if (await statusStillBlocked(actorId, match.status !== 'CREATED'))
-    return { kind: 'match_started' as const };
-  // 新队伍顺位排到末尾（当前最大 sortOrder + 1）。
-  const maxOrder = await prisma.team.aggregate({
-    where: { matchId },
-    _max: { sortOrder: true, draftOrder: true },
-  });
-  const sortOrder = (maxOrder._max.sortOrder ?? 0) + 1;
-  const draftOrder = (maxOrder._max.draftOrder ?? 0) + 1;
   try {
-    await prisma.team.create({ data: { matchId, name, sortOrder, draftOrder } });
+    return await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
+      const match = await tx.match.findUnique({ where: { id: matchId } });
+      if (!match) return { kind: 'match_not_found' as const };
+      if (await statusStillBlocked(actorId, match.status !== 'CREATED'))
+        return { kind: 'match_started' as const };
+      const teamCount = await tx.team.count({ where: activeMatchTeamWhere(matchId) });
+      if (match.bo === CUSTOM_FORMAT && teamCount >= match.customTeamCount)
+        throw badRequest(`本场自定义赛事最多 ${match.customTeamCount} 支队伍`);
+      const maxOrder = await tx.team.aggregate({
+        where: { matchId },
+        _max: { sortOrder: true, draftOrder: true },
+      });
+      const sortOrder = (maxOrder._max.sortOrder ?? 0) + 1;
+      const draftOrder = (maxOrder._max.draftOrder ?? 0) + 1;
+      await tx.team.create({ data: { matchId, name, sortOrder, draftOrder } });
+      await tx.match.update({
+        where: { id: matchId },
+        data: { teamCount: await tx.team.count({ where: activeMatchTeamWhere(matchId) }) },
+      });
+      return { kind: 'ok' as const };
+    });
   } catch (error) {
     if ((error as { code?: string }).code === 'P2002') return { kind: 'duplicate' as const };
     throw error;
   }
-  await syncTeamCount(matchId);
-  return { kind: 'ok' as const };
 }
 
 export async function deleteTeam(teamId: number, actorId?: number) {

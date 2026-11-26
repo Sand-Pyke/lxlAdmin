@@ -1,4 +1,5 @@
-'use client';
+import { matchTeamLimit } from '../../api/matches';
+('use client');
 
 import {
   ArrowLeftOutlined,
@@ -79,6 +80,7 @@ export type Board = {
     use_fee: boolean;
     bo: string;
     captain_position?: string;
+    custom_team_count?: number;
   };
   teams: Team[];
   budget: number;
@@ -111,21 +113,13 @@ function presetName(name: string) {
 }
 
 /** 各赛制在队伍选择阶段允许的队伍数量；BO1 不限制（返回 null）。 */
-function maxTeamsFor(bo: string): number | null {
-  if (bo === 'BO5') return 2;
-  if (bo === 'BO3') return 4;
-  if (bo === SIX_TEAM_FORMAT || bo === SIX_TEAM_FORMAT_V2) return 6;
-  if (bo === EIGHT_TEAM_FORMAT || bo === EIGHT_TEAM_FORMAT_V2) return 8;
-  return null;
-}
-
 function teamLimitHint(bo: string): string {
   if (bo === 'BO5') return '当前赛事为两队 BO5，不能选择多余的战队';
   if (bo === 'BO3') return '当前赛事为四队 BO3，不能选择多余的战队';
   if (bo === SIX_TEAM_FORMAT) return '当前赛事为六队模式，不能选择多余的战队';
   if (bo === SIX_TEAM_FORMAT_V2) return '当前赛事为六队模式2.0，不能选择多余的战队';
-  if (bo === EIGHT_TEAM_FORMAT) return '当前赛事为八队模式，不能选择多余的战队';
-  if (bo === EIGHT_TEAM_FORMAT_V2) return '当前赛事为八队模式2.0，不能选择多余的战队';
+  if (bo === EIGHT_TEAM_FORMAT || bo === EIGHT_TEAM_FORMAT_V2)
+    return '当前赛事为八队模式，不能选择多余的战队';
   return '不能选择更多战队';
 }
 
@@ -406,7 +400,7 @@ export function BigScreenDraft({
   }, []);
 
   const board = data?.board;
-  const maxTeams = board ? maxTeamsFor(board.match.bo) : null;
+  const maxTeams = board ? matchTeamLimit(board.match.bo, board.match.custom_team_count) : null;
   const canProceed =
     maxTeams !== null ? selectedTeams.length === maxTeams : selectedTeams.length >= 2;
   const allSigns = data?.signs ?? [];

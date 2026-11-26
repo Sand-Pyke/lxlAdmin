@@ -29,7 +29,11 @@ export async function feeCardStatus(matchId: number, userId: number) {
     available,
     used: Boolean(used),
     captain,
-    open: match.status === 'CREATED' && !match.feeCardFirstRoundDone && firstPicks === 0,
+    open:
+      match.allowItemCards !== false &&
+      match.status === 'CREATED' &&
+      !match.feeCardFirstRoundDone &&
+      firstPicks === 0,
   };
 }
 
@@ -41,6 +45,7 @@ export async function useFeeCard(matchId: number, userId: number) {
         await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
         const match = await tx.match.findUnique({ where: { id: matchId } });
         if (!match) throw notFound('赛事不存在');
+        if (match.allowItemCards === false) throw badRequest('本场赛事禁止使用道具卡');
         if (match.status !== 'CREATED' || match.feeCardFirstRoundDone)
           throw badRequest('首轮选人已结束，不能再使用降费卡');
         const signup = await tx.matchSignup.findUnique({

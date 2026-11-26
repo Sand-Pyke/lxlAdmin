@@ -18,7 +18,13 @@ export type Market = {
   source: MarketSource;
   outcomes: Outcome[];
 };
-export type Pairing = { roundNo: number; teamOneId: number; teamTwoId: number; label: string };
+export type Pairing = {
+  roundNo: number;
+  bo?: string;
+  teamOneId: number;
+  teamTwoId: number;
+  label: string;
+};
 export type MarketMatch = {
   id: number;
   name: string;
@@ -92,7 +98,7 @@ export function openMarketBody(
     (pairs.length === 1 ? pairs[0] : undefined);
   if (!pair)
     throw new Error(pairs.length ? '请选择要开盘的对阵' : '该赛事尚未确定对阵，请先完成分队开赛');
-  if (!Number.isInteger(round) || round < 0 || round > gameCount(match.bo))
+  if (!Number.isInteger(round) || round < 0 || round > gameCount(pair.bo ?? match.bo))
     throw new Error('所选赛制不支持该小场局次');
   return {
     matchId: match.id,

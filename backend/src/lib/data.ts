@@ -70,6 +70,10 @@ export type Match = {
   /** 基础信息中的状态是否已经手动修改过。 */
   statusLocked?: boolean;
   bo: string;
+  customTeamCount?: number;
+  roundFormats?: string[];
+  minSignupRank?: string;
+  allowItemCards?: boolean;
   playerCount: number;
   teamCount: number;
   signed?: boolean;

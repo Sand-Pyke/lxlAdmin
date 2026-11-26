@@ -4,19 +4,28 @@ export const SIX_TEAM_FORMAT = '六队模式';
 export const SIX_TEAM_FORMAT_V2 = '六队模式2.0';
 export const EIGHT_TEAM_FORMAT = '八队模式';
 export const EIGHT_TEAM_FORMAT_V2 = '八队模式2.0';
-export const BO_OPTIONS = [
-  'BO1',
-  'BO3',
-  'BO5',
-  SIX_TEAM_FORMAT,
-  SIX_TEAM_FORMAT_V2,
-  EIGHT_TEAM_FORMAT,
-  EIGHT_TEAM_FORMAT_V2,
-];
+export function matchFormatLabel(bo: string) {
+  return bo === EIGHT_TEAM_FORMAT_V2 ? EIGHT_TEAM_FORMAT : bo;
+}
+
+export const CUSTOM_FORMAT = '自定义赛事';
+export const BO_OPTIONS = ['BO3', SIX_TEAM_FORMAT, EIGHT_TEAM_FORMAT_V2, CUSTOM_FORMAT];
+export const CUSTOM_TEAM_COUNTS = [4, 6, 8];
+export const ROUND_FORMATS = ['BO1', 'BO3', 'BO5'];
+
+export function matchTeamLimit(bo: string, customTeamCount = 0): number | null {
+  if (bo === CUSTOM_FORMAT) return customTeamCount || null;
+  if (bo === 'BO5') return 2;
+  if (bo === 'BO3') return 4;
+  if (bo === SIX_TEAM_FORMAT || bo === SIX_TEAM_FORMAT_V2) return 6;
+  if (bo === EIGHT_TEAM_FORMAT || bo === EIGHT_TEAM_FORMAT_V2) return 8;
+  return null;
+}
 export const MATCH_STATUSES = ['CREATED', 'LIVE', 'FINISHED'] as const;
 
 /** 按赛制和轮次返回本轮 BO；普通 BO 赛制直接原样返回。 */
-export function boForRound(format: string, roundNo: number) {
+export function boForRound(format: string, roundNo: number, roundFormats?: readonly string[]) {
+  if (format === CUSTOM_FORMAT) return roundFormats?.[roundNo - 1] ?? 'BO3';
   if (format === SIX_TEAM_FORMAT) return roundNo === 2 ? 'BO1' : 'BO3';
   if (format === SIX_TEAM_FORMAT_V2) return roundNo >= 3 ? 'BO5' : 'BO3';
   if (format === EIGHT_TEAM_FORMAT) return roundNo >= 3 ? 'BO5' : 'BO3';
@@ -65,8 +74,8 @@ export function boScoreHint(bo: string): string {
   return '比分不符合当前赛制';
 }
 
-function roundTitle(roundNo: number, totalRounds: number, format = '') {
-  if (format === SIX_TEAM_FORMAT) {
+function roundTitle(roundNo: number, totalRounds: number, format = '', customTeamCount?: number) {
+  if (matchTeamLimit(format, customTeamCount) === 6 && format !== SIX_TEAM_FORMAT_V2) {
     if (roundNo === 1) return '六强赛';
     if (roundNo === 2) return '半决赛';
     if (roundNo === 3) return '决赛';
@@ -85,8 +94,13 @@ function roundTitle(roundNo: number, totalRounds: number, format = '') {
   return `第 ${roundNo} 轮`;
 }
 
-export function roundLabel(roundNo: number, totalRounds: number, format = '') {
-  const title = roundTitle(roundNo, totalRounds, format);
+export function roundLabel(
+  roundNo: number,
+  totalRounds: number,
+  format = '',
+  customTeamCount?: number,
+) {
+  const title = roundTitle(roundNo, totalRounds, format, customTeamCount);
   if (format !== EIGHT_TEAM_FORMAT && format !== SIX_TEAM_FORMAT_V2) return title;
   return `${roundNo >= 3 ? '第二天' : '第一天'} · ${title}`;
 }
@@ -135,7 +149,7 @@ export function applicableRegularTiers(
     { place: 1, label: '冠军' },
     { place: 2, label: '亚军' },
   ];
-  if (bo === SIX_TEAM_FORMAT || bo === SIX_TEAM_FORMAT_V2) {
+  if (matchTeamLimit(bo, teamCount) === 6) {
     tiers.push({ place: 4, label: '四强' }, { place: 6, label: '六强' });
     return tiers;
   }
@@ -220,6 +234,10 @@ export type MatchBoard = {
     total_rounds: number;
     champion_team_id: number | null;
     captain_position: string;
+    custom_team_count?: number;
+    round_formats?: string[];
+    min_signup_rank?: string;
+    allow_item_cards?: boolean;
     round: string;
     date: string | null;
     live_url: string | null;

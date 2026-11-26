@@ -1,4 +1,4 @@
-import { SIX_TEAM_FORMAT, SIX_TEAM_FORMAT_V2 } from '@/lib/admin-options';
+import { matchTeamLimit } from '@/lib/admin-options';
 
 /**
  * 冠军池纯工具（客户端可安全引用，不依赖 Prisma/服务端）。
@@ -89,7 +89,7 @@ export function applicableRegularTiers(
     { place: 1, label: '冠军' },
     { place: 2, label: '亚军' },
   ];
-  if (bo === SIX_TEAM_FORMAT || bo === SIX_TEAM_FORMAT_V2) {
+  if (matchTeamLimit(bo, teamCount) === 6) {
     tiers.push({ place: 4, label: '四强' }, { place: 6, label: '六强' });
     return tiers;
   }

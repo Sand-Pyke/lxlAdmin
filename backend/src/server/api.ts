@@ -136,7 +136,7 @@ const KIND_ERRORS: Record<string, { status: number; message: string }> = {
   bad_team_count: {
     status: 400,
     message:
-      '参赛队伍数必须是 2/4/6/8/16/32 支（六队模式 / 六队模式2.0 需正好 6 支、八队模式 / 八队模式2.0 需正好 8 支）',
+      '参赛队伍数必须是 2/4/6/8/16/32 支（六队模式 / 六队模式2.0 需正好 6 支、八队模式需正好 8 支）',
   },
   not_started: { status: 400, message: '赛事尚未开始（待选人阶段）' },
   match_started: { status: 400, message: '赛事已开始，不能再编辑队伍或选人' },

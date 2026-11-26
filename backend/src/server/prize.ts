@@ -4,7 +4,7 @@ import { settleAllInCards } from '@/server/all-in-card';
 import { badRequest, notFound } from '@/server/api';
 import { isCoreAdminActor } from '@/server/permissions';
 import { creditLedger } from '@/server/points';
-import { SIX_TEAM_FORMAT, SIX_TEAM_FORMAT_V2 } from '@/lib/admin-options';
+import { matchTeamLimit } from '@/lib/admin-options';
 import {
   PRIZE_PLACE_LABELS,
   parsePrizePool,
@@ -31,6 +31,7 @@ function parsePoolOrThrow(input: unknown): Record<number, number> {
 function regularTeamPlace(
   match: {
     bo: string;
+    customTeamCount?: number;
     teamCount: number;
     championTeamId: number | null;
     runnerupTeamId: number | null;
@@ -45,7 +46,7 @@ function regularTeamPlace(
     return Math.max(max, row.roundNo);
   }, 0);
   if (!lastRound) return 0;
-  if (match.bo === SIX_TEAM_FORMAT || match.bo === SIX_TEAM_FORMAT_V2) {
+  if (matchTeamLimit(match.bo, match.customTeamCount) === 6) {
     if (lastRound === 1) return 6;
     if (lastRound === 2) return 4;
     return 0;
@@ -123,6 +124,7 @@ export async function distributeMatchPrizes(matchId: number) {
       id: true,
       name: true,
       bo: true,
+      customTeamCount: true,
       teamCount: true,
       championTeamId: true,
       runnerupTeamId: true,

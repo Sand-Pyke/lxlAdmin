@@ -11,13 +11,7 @@ import {
 } from '@/server/captain-teams';
 import { activeNameplatesForUsers } from '@/server/nameplates';
 import type { Match, Player } from '@/lib/data';
-import {
-  EIGHT_TEAM_FORMAT,
-  EIGHT_TEAM_FORMAT_V2,
-  POSITION_OPTIONS,
-  SIX_TEAM_FORMAT,
-  SIX_TEAM_FORMAT_V2,
-} from '@/lib/admin-options';
+import { POSITION_OPTIONS, matchTeamLimit, meetsSignupRank } from '@/lib/admin-options';
 import {
   activeTitleMap,
   listPlayerCards,
@@ -47,6 +41,10 @@ export function matchFrom(match: MatchWithCreator, signed = false): Match {
     status: match.status,
     statusLocked: match.statusLocked,
     bo: match.bo,
+    customTeamCount: match.customTeamCount,
+    roundFormats: match.roundFormats,
+    minSignupRank: match.minSignupRank,
+    allowItemCards: match.allowItemCards,
     playerCount: match.playerCount,
     teamCount: match.teamCount,
     signed,
@@ -210,7 +208,16 @@ export async function signupForMatch(matchId: number, userId: number, options: S
           select: { id: true },
         });
         if (existingSignup) return { kind: 'exists' as const };
-        if (options.useFeeCard) throw badRequest('请先报名，再点击赛事页面的使用降费卡按钮');
+        if (match.minSignupRank && !meetsSignupRank(profile?.rank, match.minSignupRank)) {
+          throw badRequest('报名要求 ' + match.minSignupRank + ' 及以上段位');
+        }
+        if (options.useFeeCard) {
+          throw badRequest(
+            match.allowItemCards === false
+              ? '本场赛事禁止使用道具卡'
+              : '请先报名，再点击赛事页面的使用降费卡按钮',
+          );
+        }
         const previousUse = await tx.matchFeeCardUse.findUnique({
           where: { userId_matchId: { userId, matchId } },
         });
@@ -227,16 +234,7 @@ export async function signupForMatch(matchId: number, userId: number, options: S
           if (!isPresetTeamLogo(teamLogo) && !options.uploadedLogo) throw badRequest('队标无效');
           await assertUniqueCaptainName(tx, matchId, teamName);
         }
-        const positionLimit =
-          match.bo === 'BO5'
-            ? 2
-            : match.bo === 'BO3'
-              ? 4
-              : match.bo === SIX_TEAM_FORMAT || match.bo === SIX_TEAM_FORMAT_V2
-                ? 6
-                : match.bo === EIGHT_TEAM_FORMAT || match.bo === EIGHT_TEAM_FORMAT_V2
-                  ? 8
-                  : null;
+        const positionLimit = matchTeamLimit(match.bo, match.customTeamCount);
         const positionSignupCount = positionLimit
           ? await tx.matchSignup.count({
               where: {
@@ -353,23 +351,13 @@ export async function cancelSignupForMatch(matchId: number, userId: number) {
  */
 export async function rebalanceSignupWaitlist(
   matchId: number,
-  bo: string,
   db: Prisma.TransactionClient | typeof prisma = prisma,
 ) {
   const match = await db.match.findUniqueOrThrow({
     where: { id: matchId },
-    select: { captainPosition: true },
+    select: { captainPosition: true, bo: true, customTeamCount: true },
   });
-  const positionLimit =
-    bo === 'BO5'
-      ? 2
-      : bo === 'BO3'
-        ? 4
-        : bo === SIX_TEAM_FORMAT || bo === SIX_TEAM_FORMAT_V2
-          ? 6
-          : bo === EIGHT_TEAM_FORMAT || bo === EIGHT_TEAM_FORMAT_V2
-            ? 8
-            : null;
+  const positionLimit = matchTeamLimit(match.bo, match.customTeamCount);
 
   const signups = await db.matchSignup.findMany({
     where: { matchId },

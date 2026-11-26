@@ -70,28 +70,43 @@ export const rankIcon = (rank: string | null | undefined) => RANK_ICON[(rank ?? 
 export const SIX_TEAM_FORMAT = '六队模式';
 /** 六队模式2.0：6 队单败淘汰，分两天进行，第一天 6进4 与 4进2（BO3），第二天决赛（BO5）。 */
 export const SIX_TEAM_FORMAT_V2 = '六队模式2.0';
-/** 八队模式：8 队单败淘汰，第一天 8进4 与 4进2（BO3），第二天决赛（BO5）。 */
+/** 历史八队赛制：8 队单败淘汰，第一天 8进4 与 4进2（BO3），第二天决赛（BO5）。 */
 export const EIGHT_TEAM_FORMAT = '八队模式';
-/** 八队模式2.0：8 队单败淘汰，一天打完，四分之一决赛 BO3、半决赛 BO1、决赛 BO3。 */
+/** 现行八队模式保留已存储的赛制标识。8 队单败淘汰，一天打完，四分之一决赛 BO3、半决赛 BO1、决赛 BO3。 */
 export const EIGHT_TEAM_FORMAT_V2 = '八队模式2.0';
-export const BO_OPTIONS = [
-  'BO1',
-  'BO3',
-  'BO5',
-  SIX_TEAM_FORMAT,
-  SIX_TEAM_FORMAT_V2,
-  EIGHT_TEAM_FORMAT,
-  EIGHT_TEAM_FORMAT_V2,
-];
+export function matchFormatLabel(bo: string) {
+  return bo === EIGHT_TEAM_FORMAT_V2 ? EIGHT_TEAM_FORMAT : bo;
+}
+
+export const CUSTOM_FORMAT = '自定义赛事';
+export const BO_OPTIONS = ['BO3', SIX_TEAM_FORMAT, EIGHT_TEAM_FORMAT_V2, CUSTOM_FORMAT];
+export const CUSTOM_TEAM_COUNTS = [4, 6, 8];
+export const ROUND_FORMATS = ['BO1', 'BO3', 'BO5'];
+
+export function matchTeamLimit(bo: string, customTeamCount = 0): number | null {
+  if (bo === CUSTOM_FORMAT) return customTeamCount || null;
+  if (bo === 'BO5') return 2;
+  if (bo === 'BO3') return 4;
+  if (bo === SIX_TEAM_FORMAT || bo === SIX_TEAM_FORMAT_V2) return 6;
+  if (bo === EIGHT_TEAM_FORMAT || bo === EIGHT_TEAM_FORMAT_V2) return 8;
+  return null;
+}
+
+export function meetsSignupRank(rank: unknown, minimum: string) {
+  if (!minimum) return true;
+  const normalized = normalizeRank(rank);
+  return Boolean(normalized) && RANKS.indexOf(normalized) <= RANKS.indexOf(minimum);
+}
 
 /** 按赛制和轮次返回本轮 BO；普通 BO 赛制直接原样返回。 */
-export function boForRound(format: string, roundNo: number) {
+export function boForRound(format: string, roundNo: number, roundFormats?: readonly string[]) {
+  if (format === CUSTOM_FORMAT) return roundFormats?.[roundNo - 1] ?? 'BO3';
   if (format === SIX_TEAM_FORMAT) return roundNo === 2 ? 'BO1' : 'BO3';
   // 六队模式2.0：第一天两轮 BO3，第二天决赛 BO5。
   if (format === SIX_TEAM_FORMAT_V2) return roundNo >= 3 ? 'BO5' : 'BO3';
   // 八队模式：前两轮 BO3，决赛 BO5。
   if (format === EIGHT_TEAM_FORMAT) return roundNo >= 3 ? 'BO5' : 'BO3';
-  // 八队模式2.0：四分之一决赛 BO3、半决赛 BO1、决赛 BO3。
+  // 现行八队模式：四分之一决赛 BO3、半决赛 BO1、决赛 BO3。
   if (format === EIGHT_TEAM_FORMAT_V2) return roundNo === 2 ? 'BO1' : 'BO3';
   return format;
 }

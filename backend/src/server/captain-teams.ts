@@ -9,12 +9,7 @@ import {
   type CurrentMatchTeam,
 } from '@/lib/captain-teams';
 import { teamLogo } from '@/lib/teams';
-import {
-  EIGHT_TEAM_FORMAT,
-  EIGHT_TEAM_FORMAT_V2,
-  SIX_TEAM_FORMAT,
-  SIX_TEAM_FORMAT_V2,
-} from '@/lib/admin-options';
+import { matchTeamLimit } from '@/lib/admin-options';
 import { badRequest, forbidden, notFound } from '@/server/api';
 import { readUpload } from '@/server/account';
 import { deleteStoredObject, putUploadedImage } from '@/server/uploads';
@@ -115,16 +110,7 @@ export async function assertCaptainTeamsReady(tx: Prisma.TransactionClient, matc
   const captains = await tx.matchSignup.findMany({
     where: { matchId, isWaitlisted: false, mainPosition: match.captainPosition },
   });
-  const limit =
-    match.bo === 'BO5'
-      ? 2
-      : match.bo === 'BO3'
-        ? 4
-        : [SIX_TEAM_FORMAT, SIX_TEAM_FORMAT_V2].includes(match.bo)
-          ? 6
-          : [EIGHT_TEAM_FORMAT, EIGHT_TEAM_FORMAT_V2].includes(match.bo)
-            ? 8
-            : 2;
+  const limit = matchTeamLimit(match.bo, match.customTeamCount) ?? 2;
   if (
     captains.length < limit ||
     captains.some((sign) => !sign.captainTeamName || !sign.captainTeamLogo)

@@ -28,25 +28,31 @@ const board = {
 };
 
 for (const role of ['core', 'reviewer', 'admin']) {
-  test(`regular match deletion is visible only to core admins: ${role}`, async ({
+  test(`regular draft match deletion is visible to core and secondary admins: ${role}`, async ({
     page,
     request,
   }) => {
     await request.get('/api/__test/reset');
-    await page.route('**/api/admin/teams/1', (route) => route.fulfill({ json: board }));
+    let status = 'CREATED';
+    await page.route('**/api/admin/teams/1', (route) =>
+      route.fulfill({ json: { ...board, match: { ...board.match, status } } }),
+    );
     await page.goto('/matches/1');
     await page.getByLabel('管理员账号').fill(role);
     await page.getByLabel('密码', { exact: true }).fill('fixture-only');
     await page.getByRole('button', { name: '登录', exact: true }).click();
     await expect(page.locator('.page-title')).toContainText(board.match.name);
     const deleteButton = page.getByRole('button', { name: /删除赛事$/ });
-    if (role === 'core') {
+    if (role !== 'admin') {
       await expect(deleteButton).toBeVisible();
       await deleteButton.click();
       await expect(
         page.getByText(`删除赛事「${board.match.name}」？`, { exact: true }),
       ).toBeVisible();
       await page.getByRole('button', { name: '取消', exact: true }).click();
+      status = 'LIVE';
+      await page.reload();
+      await expect(deleteButton).toBeDisabled();
     } else {
       await expect(deleteButton).toHaveCount(0);
     }
@@ -115,4 +121,59 @@ test('score entry shows loading and prevents another submission until the save f
   }
   await expect(dialog).not.toBeVisible();
   expect(submissions).toBe(1);
+});
+
+test('custom tournament creation submits the selected roster size, round formats and rank', async ({
+  page,
+  request,
+}) => {
+  await request.get('/api/__test/reset');
+  await page.route('**/api/match/list?*', (route) =>
+    route.fulfill({ json: { match_list: [], total: 0 } }),
+  );
+  await page.route('**/api/admin/match/create', (route) =>
+    route.fulfill({ json: { id: 1, msg: '赛事已创建' } }),
+  );
+  await page.goto('/matches?create=1');
+  await page.getByLabel('管理员账号').fill('core');
+  await page.getByLabel('密码', { exact: true }).fill('fixture-only');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('赛事名称').fill('周末自定义赛');
+  await dialog.getByLabel('赛制', { exact: true }).click();
+  await expect(page.getByRole('option', { name: '八队模式', exact: true })).toHaveCount(1);
+  await expect(page.getByText('八队模式2.0', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('BO1', { exact: true })).toHaveCount(0);
+  await page.getByText('自定义赛事', { exact: true }).click();
+  await dialog.getByLabel('正式参赛人数').click();
+  await page.getByText('30 人（6 队）', { exact: true }).click();
+  await expect(dialog.getByLabel('第 3 轮赛制')).toBeVisible();
+  await dialog.getByLabel('正式参赛人数').click();
+  await page.getByText('20 人（4 队）', { exact: true }).click();
+  await expect(dialog.getByLabel('第 3 轮赛制')).toHaveCount(0);
+  for (const round of [1, 2]) {
+    const selector = dialog.getByLabel('第 ' + round + ' 轮赛制');
+    await selector.click();
+    const listId = await selector.getAttribute('aria-controls');
+    await page
+      .locator('[id="' + listId + '"]')
+      .getByRole('option', { name: 'BO5', exact: true })
+      .click();
+  }
+  await dialog.getByLabel('最低报名段位').click();
+  await page.getByText('钻石及以上', { exact: true }).click();
+  const itemCards = dialog.getByRole('switch', { name: '允许使用道具卡' });
+  await expect(itemCards).toHaveAttribute('aria-checked', 'true');
+  await itemCards.click();
+  const submitted = page.waitForRequest((call) => call.url().endsWith('/api/admin/match/create'));
+  await dialog.getByRole('button', { name: '创建赛事' }).click();
+  expect((await submitted).postDataJSON()).toMatchObject({
+    bo: '自定义赛事',
+    custom_team_count: 4,
+    round_formats: ['BO5', 'BO5'],
+    min_signup_rank: '钻石',
+    allow_item_cards: false,
+    use_fee: true,
+    captain_position: '',
+  });
 });

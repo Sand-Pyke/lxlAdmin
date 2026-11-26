@@ -355,7 +355,10 @@ export default function Markets() {
                 value={selectedPair ? pairingKey(selectedPair) : undefined}
                 disabled={!selected || !pairs.length}
                 placeholder="先选择比赛并确定对阵"
-                onChange={setPair}
+                onChange={(value) => {
+                  setPair(value);
+                  setRound(0);
+                }}
                 options={pairs.map((item) => ({
                   value: pairingKey(item),
                   label: `${item.label} · 第 ${item.roundNo} 轮`,
@@ -374,7 +377,7 @@ export default function Markets() {
               options={[
                 { value: 0, label: '大场（全场胜负）' },
                 ...Array.from(
-                  { length: kind === 'REGULAR' ? gameCount(selected?.bo) : 0 },
+                  { length: kind === 'REGULAR' ? gameCount(selectedPair?.bo ?? selected?.bo) : 0 },
                   (_, i) => ({ value: i + 1, label: `第 ${i + 1} 局` }),
                 ),
               ]}

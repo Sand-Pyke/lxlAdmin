@@ -4,6 +4,7 @@ import {
   App,
   Button,
   Card,
+  Form,
   Input,
   InputNumber,
   Modal,
@@ -24,14 +25,20 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { post } from '../api/client';
+import {
+  defaultCustomFormat,
+  MatchFormatFields,
+  type MatchFormatValues,
+} from '../components/MatchFormatFields';
 import { RosterPanel } from '../components/MatchRoster';
 import {
   BO_OPTIONS,
   BO_WINS,
   DEFAULT_PRIZE_POOL,
   MATCH_STATUSES,
-  SIX_TEAM_FORMAT,
-  SIX_TEAM_FORMAT_V2,
+  CUSTOM_FORMAT,
+  matchTeamLimit,
+  matchFormatLabel,
   applicableRegularTiers,
   boForRound,
   boScoreHint,
@@ -79,6 +86,7 @@ export default function MatchManage() {
   const client = useQueryClient();
   const { message } = App.useApp();
   const isCoreAdmin = Boolean(viewer?.is_core_admin);
+  const canDeleteMatch = can(viewer, 'matches.delete');
   const statusGate = (disabled: boolean) => (isCoreAdmin ? false : disabled);
 
   const [statusOpen, setStatusOpen] = useState(false);
@@ -86,6 +94,8 @@ export default function MatchManage() {
   const [statusValue, setStatusValue] = useState('CREATED');
   const [liveOpen, setLiveOpen] = useState(false);
   const [liveValue, setLiveValue] = useState('');
+  const [formatOpen, setFormatOpen] = useState(false);
+  const [formatForm] = Form.useForm<MatchFormatValues>();
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', round: '', captain_position: '', date: '' });
   const [prizeOpen, setPrizeOpen] = useState(false);
@@ -112,8 +122,8 @@ export default function MatchManage() {
 
   const run = useMutation({
     mutationFn: (payload: { url: string; body?: unknown; fallback: string }) => {
-      if (payload.url.startsWith('/api/admin/match/delete/') && !isCoreAdmin) {
-        throw new Error('仅核心管理员可以删除赛事');
+      if (payload.url.startsWith('/api/admin/match/delete/') && !canDeleteMatch) {
+        throw new Error('只有二级管理员及以上可以删除赛事');
       }
       return post<{ msg?: string; advanceError?: string; warning?: string }>(
         payload.url,
@@ -163,9 +173,10 @@ export default function MatchManage() {
     }));
 
   const scoreRound = board?.current_round ?? 1;
-  const scoreBo = board ? boForRound(board.match.bo, scoreRound) : 'BO1';
+  const scoreBo = board ? boForRound(board.match.bo, scoreRound, board.match.round_formats) : 'BO1';
   const needsWildcard =
-    (board?.match.bo === SIX_TEAM_FORMAT || board?.match.bo === SIX_TEAM_FORMAT_V2) &&
+    board &&
+    matchTeamLimit(board.match.bo, board.match.custom_team_count) === 6 &&
     scoreRound === 1;
   const wildcardOptions = (board?.round_pairs ?? [])
     .filter((pair) => pair.has_score && pair.score_one !== pair.score_two)
@@ -180,7 +191,10 @@ export default function MatchManage() {
     if (!board) return;
     const current = prizePoolFromJson(board.match.prize_pool_json);
     const form: Record<number, number> = {};
-    for (const tier of applicableRegularTiers(board.match.bo, board.match.team_count)) {
+    for (const tier of applicableRegularTiers(
+      board.match.bo,
+      board.match.custom_team_count || board.match.team_count,
+    )) {
       form[tier.place] = current[tier.place] ?? DEFAULT_PRIZE_POOL[tier.place] ?? 0;
     }
     setPrizeForm(form);
@@ -254,7 +268,17 @@ export default function MatchManage() {
               <Space wrap>
                 <Typography.Text type="secondary">基础信息</Typography.Text>
                 <Status value={board.match.status} />
-                <Tag>{board.match.bo}</Tag>
+                <Tag>{matchFormatLabel(board.match.bo)}</Tag>
+                {board.match.bo === CUSTOM_FORMAT && (
+                  <>
+                    <Tag>{(board.match.custom_team_count ?? 0) * 5} 人</Tag>
+                    <Tag>{board.match.round_formats?.join(' / ')}</Tag>
+                    <Tag>
+                      {board.match.allow_item_cards === false ? '禁用道具卡' : '允许道具卡'}
+                    </Tag>
+                    {board.match.min_signup_rank && <Tag>{board.match.min_signup_rank}及以上</Tag>}
+                  </>
+                )}
                 <Switch
                   aria-label="赛事计费"
                   checked={board.match.use_fee}
@@ -293,20 +317,30 @@ export default function MatchManage() {
                   冠军池
                 </Button>
                 {board.match.prize_distributed ? <Tag color="green">奖金已发放</Tag> : null}
-                <Select
+                <Button
                   size="small"
-                  style={{ width: 120 }}
-                  value={board.match.bo}
-                  disabled={statusGate(board.match.status !== 'CREATED')}
-                  options={BO_OPTIONS.map((bo) => ({ value: bo, label: bo }))}
-                  onChange={(bo) =>
-                    run.mutate({
-                      url: `/api/admin/match/set_bo/${matchId}`,
-                      body: { bo },
-                      fallback: '赛制已更新',
-                    })
+                  disabled={
+                    board.match.bo === CUSTOM_FORMAT
+                      ? board.match.status !== 'CREATED'
+                      : statusGate(board.match.status !== 'CREATED')
                   }
-                />
+                  onClick={() => {
+                    const current = board.match;
+                    formatForm.setFieldsValue({
+                      bo: BO_OPTIONS.includes(current.bo) ? current.bo : undefined,
+                      custom_team_count:
+                        current.custom_team_count || defaultCustomFormat.custom_team_count,
+                      round_formats: current.round_formats?.length
+                        ? current.round_formats
+                        : defaultCustomFormat.round_formats,
+                      min_signup_rank: current.min_signup_rank ?? '',
+                      allow_item_cards: current.allow_item_cards ?? true,
+                    });
+                    setFormatOpen(true);
+                  }}
+                >
+                  编辑赛制
+                </Button>
                 <Button
                   size="small"
                   disabled={statusGate(board.match.status === 'FINISHED')}
@@ -322,8 +356,9 @@ export default function MatchManage() {
                     观看直播
                   </Typography.Link>
                 ) : null}
-                {isCoreAdmin && (
+                {canDeleteMatch && (
                   <Popconfirm
+                    disabled={board.match.status !== 'CREATED'}
                     title={`删除赛事「${board.match.name}」？`}
                     description="该赛事的报名、队伍、轮次与战绩会被一并删除。"
                     okText="删除"
@@ -336,7 +371,12 @@ export default function MatchManage() {
                       )
                     }
                   >
-                    <Button size="small" danger icon={<DeleteOutlined />}>
+                    <Button
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                      disabled={board.match.status !== 'CREATED'}
+                    >
                       删除赛事
                     </Button>
                   </Popconfirm>
@@ -474,6 +514,34 @@ export default function MatchManage() {
           )}
 
           <Modal
+            title="编辑赛制"
+            open={formatOpen}
+            forceRender
+            okText="保存"
+            cancelText="取消"
+            confirmLoading={run.isPending}
+            onCancel={() => setFormatOpen(false)}
+            onOk={() => formatForm.submit()}
+          >
+            <Form
+              form={formatForm}
+              layout="vertical"
+              onFinish={(values) =>
+                run.mutate(
+                  {
+                    url: `/api/admin/match/set_bo/${matchId}`,
+                    body: values,
+                    fallback: '赛制已更新',
+                  },
+                  { onSuccess: () => setFormatOpen(false) },
+                )
+              }
+            >
+              <MatchFormatFields form={formatForm} />
+            </Form>
+          </Modal>
+
+          <Modal
             title={`编辑赛事 · ${board.match.name}`}
             open={editOpen}
             okText="保存"
@@ -588,7 +656,7 @@ export default function MatchManage() {
           </Modal>
 
           <Modal
-            title={`录入${roundLabel(scoreRound, board.match.total_rounds, board.match.bo)}战果（${scoreBo}）`}
+            title={`录入${roundLabel(scoreRound, board.match.total_rounds, board.match.bo, board.match.custom_team_count)}战果（${scoreBo}）`}
             open={scoreOpen}
             okText="保存"
             cancelText="取消"
@@ -860,7 +928,10 @@ export default function MatchManage() {
                 showIcon
                 title="冠军池在开赛前设置，正式开赛后不可更改（核心管理员不受限）。按最终名次给该档每位参赛队员发放对应冠军币。"
               />
-              {applicableRegularTiers(board.match.bo, board.match.team_count).map((tier) => (
+              {applicableRegularTiers(
+                board.match.bo,
+                board.match.custom_team_count || board.match.team_count,
+              ).map((tier) => (
                 <div key={tier.place} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <Typography.Text style={{ width: 72 }}>{tier.label}</Typography.Text>
                   <InputNumber

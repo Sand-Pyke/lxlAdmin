@@ -168,6 +168,10 @@ model Match {
   /// 是否至少有一轮已经完成战果录入并结束，用于开放今日 FMVP 选择。
   roundEnded       Boolean           @default(false)
   bo               String            @default("BO3")
+  customTeamCount  Int               @default(0)
+  roundFormats     String[]          @default([])
+  minSignupRank    String            @default("")
+  allowItemCards   Boolean           @default(true)
   playerCount      Int               @default(0)
   teamCount        Int               @default(2)
   blueTeam         String            @default("蓝色方")

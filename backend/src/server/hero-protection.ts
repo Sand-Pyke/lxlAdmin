@@ -30,8 +30,9 @@ export function awardHeroProtectionCard(
 export async function consumeMatchHeroProtections(tx: Prisma.TransactionClient, matchId: number) {
   const match = await tx.match.findUniqueOrThrow({
     where: { id: matchId },
-    select: { currentRound: true },
+    select: { currentRound: true, allowItemCards: true },
   });
+  if (match.allowItemCards === false) return;
   const protections = await tx.matchHeroProtection.findMany({
     where: { matchId, roundNo: match.currentRound || 1, card: { consumedAt: null } },
     select: { ownerId: true, teamId: true, cardId: true },
@@ -110,7 +111,7 @@ async function lockCurrentRound(tx: Prisma.TransactionClient, matchId: number, r
   await tx.$queryRaw`SELECT id FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
   const match = await tx.match.findUnique({
     where: { id: matchId },
-    select: { status: true, currentRound: true },
+    select: { status: true, currentRound: true, allowItemCards: true },
   });
   if (!match) throw notFound('赛事不存在');
   if (!['CREATED', 'LIVE'].includes(match.status))
@@ -123,7 +124,7 @@ async function lockCurrentRound(tx: Prisma.TransactionClient, matchId: number, r
 export async function getMatchHeroProtection(matchId: number, ownerId: number) {
   const match = await prisma.match.findUnique({
     where: { id: matchId },
-    select: { id: true, name: true, status: true, currentRound: true },
+    select: { id: true, name: true, status: true, currentRound: true, allowItemCards: true },
   });
   if (!match) throw notFound('赛事不存在');
 
@@ -165,6 +166,7 @@ export async function getMatchHeroProtection(matchId: number, ownerId: number) {
     match_status: match.status,
     current_round: match.currentRound,
     eligible: Boolean(
+      match.allowItemCards !== false &&
       signup?.teamId &&
       ['CREATED', 'LIVE'].includes(match.status) &&
       (await teamInRound(prisma, matchId, match.currentRound, signup.teamId)),
@@ -202,7 +204,8 @@ export async function setMatchHeroProtection(
 
   try {
     await prisma.$transaction(async (tx) => {
-      await lockCurrentRound(tx, matchId, roundNo);
+      const match = await lockCurrentRound(tx, matchId, roundNo);
+      if (match.allowItemCards === false) throw badRequest('本场赛事禁止使用道具卡');
 
       const signup = await tx.matchSignup.findFirst({
         where: { matchId, userId: ownerId, teamId: { not: null }, isWaitlisted: false },

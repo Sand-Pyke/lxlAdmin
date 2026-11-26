@@ -1,10 +1,12 @@
 import {
   BO_OPTIONS as BO_LIST,
-  EIGHT_TEAM_FORMAT,
-  EIGHT_TEAM_FORMAT_V2,
+  CUSTOM_FORMAT,
+  CUSTOM_TEAM_COUNTS,
+  ROUND_FORMATS,
+  matchTeamLimit,
+  matchFormatLabel,
+  meetsSignupRank,
   MATCH_STATUSES,
-  SIX_TEAM_FORMAT,
-  SIX_TEAM_FORMAT_V2,
   RANKS,
   REVIEW_STATUSES,
   normalizeRank,
@@ -14,6 +16,7 @@ import {
 } from '@/lib/admin-options';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { isLineupReady } from '@/lib/lineup-readiness';
 import { feeCardDisplay } from '@/lib/fee-reduction';
 import { refundMatchFeeCards } from '@/server/fee-card-use';
 import {
@@ -27,6 +30,7 @@ import { randomDefaultAvatar } from '@/lib/default-avatars';
 import bcrypt from 'bcryptjs';
 import { ApiError, badRequest, forbidden, notFound } from '@/server/api';
 import {
+  adminLevelOf,
   assertCanManageUser,
   assertSecondaryAdmin,
   isCoreAdminActor,
@@ -63,11 +67,38 @@ async function requireMatch(matchId: number) {
   return match;
 }
 
+function matchFormatSettings(bo: string, body: Record<string, unknown>) {
+  if (!BO_LIST.includes(bo)) throw badRequest('赛制无效');
+  if (bo !== CUSTOM_FORMAT)
+    return { bo, customTeamCount: 0, roundFormats: [], minSignupRank: '', allowItemCards: true };
+
+  const customTeamCount = body.custom_team_count;
+  if (typeof customTeamCount !== 'number' || !CUSTOM_TEAM_COUNTS.includes(customTeamCount))
+    throw badRequest('请选择 20、30 或 40 人');
+  const roundFormats = body.round_formats;
+  if (
+    !Array.isArray(roundFormats) ||
+    roundFormats.length !== totalRoundsFor(customTeamCount) ||
+    roundFormats.some((format) => !ROUND_FORMATS.includes(format))
+  )
+    throw badRequest('请为每一轮选择 BO1、BO3 或 BO5');
+  const minSignupRank = asText(body.min_signup_rank);
+  if (
+    (body.min_signup_rank !== undefined && typeof body.min_signup_rank !== 'string') ||
+    (minSignupRank && normalizeRank(minSignupRank) !== minSignupRank)
+  )
+    throw badRequest('最低报名段位无效');
+  const allowItemCards = body.allow_item_cards;
+  if (allowItemCards !== undefined && typeof allowItemCards !== 'boolean')
+    throw badRequest('是否允许使用道具卡必须为布尔值');
+  return { bo, customTeamCount, roundFormats, minSignupRank, allowItemCards };
+}
+
 export async function createMatch(adminId: number, body: Record<string, unknown>) {
   const name = asText(body.name);
   if (!name) throw badRequest('比赛名称不能为空');
 
-  const bo = BO_LIST.includes(asText(body.bo)) ? asText(body.bo) : 'BO1';
+  const format = matchFormatSettings(asText(body.bo) || 'BO3', body);
   const round = asText(body.round) || '常规赛';
   const captainPosition = asText(body.captain_position);
   if (captainPosition && !isPosition(captainPosition)) throw badRequest('队长分路不合法');
@@ -81,7 +112,8 @@ export async function createMatch(adminId: number, body: Record<string, unknown>
     data: {
       name: name.slice(0, 100),
       status: 'CREATED',
-      bo,
+      ...format,
+      allowItemCards: format.allowItemCards ?? true,
       round: round.slice(0, 40),
       useFee: body.use_fee === undefined ? true : Boolean(body.use_fee),
       captainPosition,
@@ -225,20 +257,72 @@ export async function setMatchStatus(matchId: number, status: unknown, actorId: 
   return { msg: `赛事状态已设置为 ${status}` };
 }
 
-export async function setMatchBo(matchId: number, bo: string, actorId?: number) {
-  const match = await requireMatch(matchId);
-  if (await statusStillBlocked(actorId, match.status !== 'CREATED'))
-    throw badRequest('赛事已开始，赛制不可再修改');
-  if (!BO_LIST.includes(bo)) throw badRequest('赛制无效');
-  if (bo === match.bo) return { msg: '赛制未变化' };
-  // 名额随赛制变化时，按报名时间自动重排正式/候补：
-  // 名额放宽（如 BO3 → 六队模式）候补自动递补，名额收紧（如 六队模式 → BO3）超出者自动进入候补。
-  const { promoted, demoted } = await prisma.$transaction(async (tx) => {
-    await tx.match.update({ where: { id: matchId }, data: { bo } });
-    return rebalanceSignupWaitlist(matchId, bo, tx);
+export async function setMatchBo(matchId: number, body: Record<string, unknown>, actorId?: number) {
+  const format = matchFormatSettings(asText(body.bo), body);
+  const isCoreAdmin = actorId !== undefined && (await isCoreAdminActor(actorId));
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
+    const match = await tx.match.findUnique({ where: { id: matchId } });
+    if (!match) throw notFound('赛事不存在');
+    const custom = match.bo === CUSTOM_FORMAT || format.bo === CUSTOM_FORMAT;
+    if (match.status !== 'CREATED' && (custom || !isCoreAdmin))
+      throw badRequest('赛事已开始，赛制不可再修改');
+    const oldLimit = matchTeamLimit(match.bo, match.customTeamCount);
+    const newLimit = matchTeamLimit(format.bo, format.customTeamCount);
+    if (custom) {
+      if (format.allowItemCards === false && match.allowItemCards) {
+        const [feeUse, allInUse, heroUse, feeSignup] = await Promise.all([
+          tx.matchFeeCardUse.count({ where: { matchId } }),
+          tx.matchAllInCardUse.count({ where: { matchId } }),
+          tx.heroProtectionCard.count({
+            where: { usedMatchId: matchId, consumedAt: { not: null } },
+          }),
+          tx.matchSignup.count({ where: { matchId, feeCardInventoryId: { not: null } } }),
+        ]);
+        if (feeUse || allInUse || heroUse || feeSignup)
+          throw badRequest('本场赛事已有道具卡使用记录，无法关闭道具卡');
+        await tx.matchHeroProtection.deleteMany({ where: { matchId, card: { consumedAt: null } } });
+      }
+      if (
+        oldLimit !== newLimit &&
+        (await tx.matchSignup.count({
+          where: { matchId, teamId: { not: null } },
+        }))
+      )
+        throw badRequest('已有选手入队，请先清空选人草稿再修改人数');
+      if (newLimit && (await tx.team.count({ where: activeMatchTeamWhere(matchId) })) > newLimit)
+        throw badRequest('现有队伍超过新赛制名额，请先调整队伍数量');
+      if (format.minSignupRank && format.minSignupRank !== match.minSignupRank) {
+        const signups = await tx.matchSignup.findMany({
+          where: { matchId },
+          select: { rankAtSignup: true, user: { select: { profile: { select: { rank: true } } } } },
+        });
+        if (
+          signups.some(
+            (signup) =>
+              !meetsSignupRank(
+                signup.user.profile?.rank ?? signup.rankAtSignup,
+                format.minSignupRank,
+              ),
+          )
+        )
+          throw badRequest('已有报名选手低于新的最低段位，请先处理其报名');
+      }
+      if (
+        (match.bo !== format.bo || match.roundFormats.join() !== format.roundFormats.join()) &&
+        ((await tx.matchScore.count({ where: { matchId } })) ||
+          (await tx.matchMarket.count({ where: { matchId } })))
+      )
+        throw badRequest('赛事已有比分或竞猜盘口，无法修改每轮赛制');
+    }
+    await tx.match.update({ where: { id: matchId }, data: format });
+    return oldLimit !== newLimit
+      ? rebalanceSignupWaitlist(matchId, tx)
+      : { promoted: 0, demoted: 0 };
   });
+  const { promoted, demoted } = result;
   const suffix = promoted || demoted ? `（${promoted} 人递补为正式，${demoted} 人进入候补）` : '';
-  return { msg: `赛制已改为 ${bo}${suffix}` };
+  return { msg: `赛制已更新为 ${matchFormatLabel(format.bo)}${suffix}` };
 }
 
 export async function setMatchFee(matchId: number, useFee: boolean, actorId?: number) {
@@ -315,13 +399,9 @@ export async function finishPick(matchId: number, actorId?: number) {
   if (await statusStillBlocked(actorId, match.status !== 'CREATED'))
     throw badRequest('只有待选人阶段的赛事才能开赛');
   // 六队 / 八队模式必须先把队伍和首发凑齐，否则赛程无法按轮次推进。
-  const requiredTeams =
-    match.bo === SIX_TEAM_FORMAT || match.bo === SIX_TEAM_FORMAT_V2
-      ? 6
-      : match.bo === EIGHT_TEAM_FORMAT || match.bo === EIGHT_TEAM_FORMAT_V2
-        ? 8
-        : null;
-  if (requiredTeams) {
+  const limit = matchTeamLimit(match.bo, match.customTeamCount);
+  const requiredTeams = match.bo === CUSTOM_FORMAT || limit === 6 || limit === 8 ? limit : null;
+  if (requiredTeams && match.bo !== CUSTOM_FORMAT) {
     const [teams, counts] = await Promise.all([
       prisma.team.findMany({ where: activeMatchTeamWhere(matchId), select: { id: true } }),
       prisma.matchSignup.groupBy({
@@ -336,13 +416,30 @@ export async function finishPick(matchId: number, actorId?: number) {
       teams.some((team) => (countsByTeam.get(team.id) ?? 0) !== POSITIONS.length)
     ) {
       throw badRequest(
-        `${match.bo}需要正好 ${requiredTeams} 支队伍，且每队选满 ${POSITIONS.length} 名选手`,
+        `${matchFormatLabel(match.bo)}需要正好 ${requiredTeams} 支队伍，且每队选满 ${POSITIONS.length} 名选手`,
       );
     }
   }
   await prisma.$transaction(async (tx) => {
+    if (match.bo === CUSTOM_FORMAT) {
+      await tx.$queryRaw`SELECT id FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
+      const [teams, signups] = await Promise.all([
+        tx.team.findMany({ where: activeMatchTeamWhere(matchId), select: { id: true } }),
+        tx.matchSignup.findMany({
+          where: { matchId, teamId: { not: null } },
+          select: { teamId: true, teamPosition: true, mainPosition: true, isWaitlisted: true },
+        }),
+      ]);
+      if (!isLineupReady({ ...match, status: 'CREATED' }, teams, signups))
+        throw badRequest(`自定义赛事需要正好 ${requiredTeams} 支队伍，每队五个分路均有正式选手`);
+    }
     const started = await tx.match.updateMany({
-      where: { id: matchId, status: 'CREATED' },
+      where: {
+        id: matchId,
+        status: 'CREATED',
+        bo: match.bo,
+        customTeamCount: match.customTeamCount,
+      },
       data: { status: 'LIVE', feeCardFirstRoundDone: true },
     });
     if (started.count !== 1) throw badRequest('赛事状态已改变，无法开赛');
@@ -417,16 +514,14 @@ export async function discardPickDraft(matchId: number, actorId?: number) {
 
 /** 删除赛事并级联清理报名 / 队伍 / 战绩 / 轮次 / 战果。 */
 export async function deleteMatch(matchId: number, actorId?: number) {
-  if (actorId == null || !(await isCoreAdminActor(actorId))) {
-    throw forbidden('仅核心管理员可以删除赛事');
-  }
-  const match = await requireMatch(matchId);
-  if (await statusStillBlocked(actorId, match.status !== 'CREATED')) {
-    throw badRequest('进行中或已结束的赛事不能删除');
-  }
+  const level = actorId == null ? 0 : await adminLevelOf(actorId);
+  if (level < 2) throw forbidden('只有二级管理员及以上可以删除赛事');
   const logos: string[] = [];
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
+    const match = await tx.match.findUnique({ where: { id: matchId }, select: { status: true } });
+    if (!match) throw notFound('赛事不存在');
+    if (match.status !== 'CREATED') throw badRequest('只有待选人的赛事可以删除');
     const signs = await tx.matchSignup.findMany({
       where: { matchId },
       select: { captainTeamLogo: true },
@@ -559,7 +654,15 @@ export async function loadTeamsBoard(matchId: number) {
       captain_position: match.captainPosition,
       first_draft_round: match.status === 'CREATED' && !match.feeCardFirstRoundDone,
       bo: match.bo || 'BO1',
-      total_rounds: isBracketTeamCount(teams.length) ? totalRoundsFor(teams.length) : 1,
+      custom_team_count: match.customTeamCount,
+      round_formats: match.roundFormats,
+      min_signup_rank: match.minSignupRank,
+      allow_item_cards: match.allowItemCards,
+      total_rounds: match.customTeamCount
+        ? totalRoundsFor(match.customTeamCount)
+        : isBracketTeamCount(teams.length)
+          ? totalRoundsFor(teams.length)
+          : 1,
       round: match.round,
       date: match.date ? match.date.toISOString() : null,
       live_url: match.liveUrl,
@@ -1054,7 +1157,7 @@ export async function changeSignupPosition(signupId: number, mainPosition: unkno
           : {}),
       },
     });
-    return rebalanceSignupWaitlist(signup.match.id, signup.match.bo || 'BO1', tx);
+    return rebalanceSignupWaitlist(signup.match.id, tx);
   });
   if (target !== signup.match.captainPosition) await cleanupCaptainLogo(signup.captainTeamLogo);
   const suffix = promoted || demoted ? `（${promoted} 人递补为正式，${demoted} 人进入候补）` : '';

@@ -23,6 +23,8 @@ test('permissions combine role ceiling, explicit grants and target-account bound
   assert.ok(can(actor, 'users.review', target));
   assert.ok(!can(actor, 'users.rank.update', target));
   const secondary = { ...actor, is_secondary_admin: true };
+  assert.ok(can(secondary, 'matches.delete'));
+  assert.ok(!can(actor, 'matches.delete'));
   assert.ok(can(secondary, 'users.ban', target));
   assert.ok(!can(secondary, 'users.ban', { ...target, isAdmin: true }));
   const core = { ...actor, is_core_admin: true };

@@ -88,6 +88,7 @@ export async function allInCardOptions(userId: number, inventoryId?: number, mat
         match: {
           status: 'CREATED',
           type: 'REGULAR',
+          allowItemCards: true,
           OR: [
             { date: { gte: start, lt: end } },
             { date: null, createdAt: { gte: start, lt: end } },
@@ -133,6 +134,7 @@ export async function useAllInCard(userId: number, inventoryId: number, matchId:
       await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
       const match = await tx.match.findUnique({ where: { id: matchId } });
       if (!match) throw notFound('赛事不存在');
+      if (match.allowItemCards === false) throw badRequest('本场赛事禁止使用道具卡');
       if (match.type !== 'REGULAR' || match.status !== 'CREATED' || !isAllInMatchToday(match))
         throw badRequest('仅可在当天常规赛开赛前使用梭哈卡');
       const signup = await tx.matchSignup.findUnique({

@@ -21,7 +21,7 @@ export const POST = adminRoute(async ({ body, adminId }) => {
   if (!match) throw badRequest('赛事不存在');
   const bypass = await isCoreAdminActor(adminId);
   if (match.status === 'CREATED' && !bypass) throw badRequest('待选人阶段不能录入战果');
-  const roundBo = boForRound(match.bo, roundNo);
+  const roundBo = boForRound(match.bo, roundNo, match.roundFormats);
   if (!isValidBoScore(roundBo, scoreOne, scoreTwo)) throw badRequest(boScoreHint(roundBo));
 
   const teamOneId = requiredId(body.teamOneId, '参数不完整');

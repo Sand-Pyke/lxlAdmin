@@ -12,6 +12,7 @@ export const ADMIN_CAPABILITIES = [
   'users.password.reset',
   'matches.view',
   'matches.create',
+  'matches.delete',
   'draft.view',
   'draft.control',
   'draft.reset',
@@ -72,7 +73,7 @@ export function roleCapabilities(role: AdminRole): AdminCapability[] {
   if (role === 'USER') return [];
   if (role === 'CORE_ADMIN') return [...ADMIN_CAPABILITIES];
   return role === 'SECONDARY_ADMIN'
-    ? [...BASE, 'users.rank.update', 'users.ban', 'users.unban', 'signups.cancel']
+    ? [...BASE, 'users.rank.update', 'users.ban', 'users.unban', 'signups.cancel', 'matches.delete']
     : [...BASE];
 }
 export function adminCapabilitySnapshot(actor: Actor) {

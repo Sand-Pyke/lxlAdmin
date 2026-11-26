@@ -6,7 +6,7 @@ import { forbidden, notFound } from '@/server/api';
  *
  * 管理员分三级：普通管理员（isAdmin）、二级管理员（isAdmin + isSecondaryAdmin）、
  * 核心管理员（isCoreAdmin）。二级管理员在普通管理员的基础上额外拥有
- * 「重置段位 / 处罚用户 / 取消报名」三项权限，这三项普通管理员一律不可用。
+ * 「重置段位 / 处罚用户 / 取消报名 / 删除待选人的常规赛事」等权限。
  *
  * 规则：管理员只能管理「普通用户」。除核心管理员外，任何管理员都**不能**审核、删除或
  * 改动其他管理员账号，避免管理员互相打压。管理员权限（设为核心 / 二级 / 普通 / 取消）
@@ -39,7 +39,7 @@ export async function isCoreAdminActor(actorId: number) {
   return Boolean(actor?.isCoreAdmin);
 }
 
-/** 断言操作者至少是二级管理员（二级 / 核心）：重置段位、处罚、取消报名走这里。 */
+/** 断言操作者至少是二级管理员（二级 / 核心）。 */
 export async function assertSecondaryAdmin(
   actorId: number,
   message = '只有二级管理员及以上权限可以执行该操作',

@@ -4,7 +4,7 @@ import { badRequest, forbidden, notFound } from '@/server/api';
 import { pairTeams, rankFee, signRank } from '@/server/roster';
 import { matchOdds, payoutFor } from '@/server/odds';
 import { applyLedger, lockWallet } from '@/server/points';
-import { gameCountForBo, marketRoundLabel } from '@/lib/admin-options';
+import { boForRound, CUSTOM_FORMAT, gameCountForBo, marketRoundLabel } from '@/lib/admin-options';
 import { isLineupReady } from '@/lib/lineup-readiness';
 import { resolveMarketCloseAt } from '@/server/market-window';
 import {
@@ -45,6 +45,7 @@ async function regularPairingsByMatch(matchIds: number[]) {
         teamTwoId: true,
         status: true,
         bo: true,
+        customTeamCount: true,
       },
     }),
     prisma.matchRound.findMany({
@@ -109,7 +110,7 @@ async function regularPairingsByMatch(matchIds: number[]) {
 async function regularTeamFees(matchId: number, teamOneId: number, teamTwoId: number) {
   const match = await prisma.match.findUnique({
     where: { id: matchId },
-    select: { id: true, name: true, date: true, bo: true },
+    select: { id: true, name: true, date: true, bo: true, roundFormats: true },
   });
   if (!match) throw notFound('赛事不存在');
 
@@ -289,10 +290,14 @@ export async function openMarket(body: Record<string, unknown>) {
       nameTwo = names.two;
 
       if (roundNo !== null) {
-        const gameCount = gameCountForBo(source.bo);
+        const bo =
+          source.bo === CUSTOM_FORMAT
+            ? boForRound(source.bo, pairing.roundNo, source.roundFormats)
+            : source.bo;
+        const gameCount = gameCountForBo(bo);
         if (gameCount <= 0) throw badRequest('该赛制不支持分小场，请直接开大场盘口');
         if (roundNo > gameCount)
-          throw badRequest(`${source.bo} 最多只有 ${gameCount} 局，局次不能超过 ${gameCount}`);
+          throw badRequest(`${bo} 最多只有 ${gameCount} 局，局次不能超过 ${gameCount}`);
       }
     } else {
       if (roundNo !== null) throw badRequest('战队赛暂不支持分小场，请直接开大场盘口');
@@ -649,7 +654,7 @@ export async function listOpenableMatches() {
       where: { type: 'REGULAR', status: { not: 'FINISHED' } },
       orderBy: [{ date: 'desc' }, { id: 'desc' }],
       take: 50,
-      select: { id: true, name: true, date: true, status: true, bo: true },
+      select: { id: true, name: true, date: true, status: true, bo: true, roundFormats: true },
     }),
     prisma.teamSeasonMatch.findMany({
       where: { status: { not: 'FINISHED' } },
@@ -687,6 +692,7 @@ export async function listOpenableMatches() {
       bo: m.bo,
       pairings: (pairingsByMatch.get(m.id) ?? []).map((pairing) => ({
         roundNo: pairing.roundNo,
+        bo: m.bo === CUSTOM_FORMAT ? boForRound(m.bo, pairing.roundNo, m.roundFormats) : m.bo,
         teamOneId: pairing.teamOneId,
         teamTwoId: pairing.teamTwoId,
         label: `${teamName.get(pairing.teamOneId) ?? '待定'} vs ${teamName.get(pairing.teamTwoId) ?? '待定'}`,
