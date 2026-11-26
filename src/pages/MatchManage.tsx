@@ -94,10 +94,10 @@ export default function MatchManage() {
   const [statusValue, setStatusValue] = useState('CREATED');
   const [liveOpen, setLiveOpen] = useState(false);
   const [liveValue, setLiveValue] = useState('');
-  const [formatOpen, setFormatOpen] = useState(false);
-  const [formatForm] = Form.useForm<MatchFormatValues>();
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ name: '', round: '', captain_position: '', date: '' });
+  const [editForm] = Form.useForm<
+    MatchFormatValues & { name: string; round: string; captain_position: string; date: string }
+  >();
   const [prizeOpen, setPrizeOpen] = useState(false);
   const [prizeForm, setPrizeForm] = useState<Record<number, number>>({});
   const [scoreOpen, setScoreOpen] = useState(false);
@@ -114,6 +114,10 @@ export default function MatchManage() {
     enabled: Number.isInteger(matchId) && matchId > 0,
   });
   const board = boardQuery.data;
+  const canEditFormat = Boolean(
+    board &&
+    (board.match.status === 'CREATED' || (isCoreAdmin && board.match.bo !== CUSTOM_FORMAT)),
+  );
 
   const invalidate = useCallback(
     () => client.invalidateQueries({ queryKey: ['match-board', matchId] }),
@@ -219,11 +223,20 @@ export default function MatchManage() {
 
   function openEdit() {
     if (!board) return;
-    setEditForm({
-      name: board.match.name,
-      round: board.match.round,
-      captain_position: board.match.captain_position || '',
-      date: board.match.date ? beijingDateTime(board.match.date) : '',
+    const current = board.match;
+    editForm.setFieldsValue({
+      ...defaultCustomFormat,
+      name: current.name,
+      round: current.round,
+      captain_position: current.captain_position ?? '',
+      date: current.date ? beijingDateTime(current.date) : '',
+      bo: current.bo,
+      custom_team_count: current.custom_team_count || defaultCustomFormat.custom_team_count,
+      round_formats: current.round_formats?.length
+        ? current.round_formats
+        : defaultCustomFormat.round_formats,
+      min_signup_rank: current.min_signup_rank ?? '',
+      allow_item_cards: current.allow_item_cards ?? true,
     });
     setEditOpen(true);
   }
@@ -307,7 +320,7 @@ export default function MatchManage() {
                   disabled={statusGate(board.match.status !== 'CREATED')}
                   onClick={openEdit}
                 >
-                  编辑名称 / 轮次 / 时间
+                  编辑赛事
                 </Button>
                 <Button
                   size="small"
@@ -317,30 +330,6 @@ export default function MatchManage() {
                   冠军池
                 </Button>
                 {board.match.prize_distributed ? <Tag color="green">奖金已发放</Tag> : null}
-                <Button
-                  size="small"
-                  disabled={
-                    board.match.bo === CUSTOM_FORMAT
-                      ? board.match.status !== 'CREATED'
-                      : statusGate(board.match.status !== 'CREATED')
-                  }
-                  onClick={() => {
-                    const current = board.match;
-                    formatForm.setFieldsValue({
-                      bo: BO_OPTIONS.includes(current.bo) ? current.bo : undefined,
-                      custom_team_count:
-                        current.custom_team_count || defaultCustomFormat.custom_team_count,
-                      round_formats: current.round_formats?.length
-                        ? current.round_formats
-                        : defaultCustomFormat.round_formats,
-                      min_signup_rank: current.min_signup_rank ?? '',
-                      allow_item_cards: current.allow_item_cards ?? true,
-                    });
-                    setFormatOpen(true);
-                  }}
-                >
-                  编辑赛制
-                </Button>
                 <Button
                   size="small"
                   disabled={statusGate(board.match.status === 'FINISHED')}
@@ -514,87 +503,81 @@ export default function MatchManage() {
           )}
 
           <Modal
-            title="编辑赛制"
-            open={formatOpen}
+            title={`编辑赛事 · ${board.match.name}`}
+            open={editOpen}
             forceRender
             okText="保存"
             cancelText="取消"
             confirmLoading={run.isPending}
-            onCancel={() => setFormatOpen(false)}
-            onOk={() => formatForm.submit()}
+            onCancel={() => setEditOpen(false)}
+            onOk={() => editForm.submit()}
           >
             <Form
-              form={formatForm}
+              form={editForm}
               layout="vertical"
-              onFinish={(values) =>
+              requiredMark={false}
+              disabled={run.isPending}
+              onFinish={({ name, round, captain_position, date, ...format }) => {
+                const current = board.match;
+                const formatChanged =
+                  format.bo !== current.bo ||
+                  (format.bo === CUSTOM_FORMAT &&
+                    (format.custom_team_count !== current.custom_team_count ||
+                      format.round_formats?.join() !== current.round_formats?.join() ||
+                      format.min_signup_rank !== (current.min_signup_rank ?? '') ||
+                      format.allow_item_cards !== (current.allow_item_cards ?? true)));
                 run.mutate(
                   {
-                    url: `/api/admin/match/set_bo/${matchId}`,
-                    body: values,
-                    fallback: '赛制已更新',
+                    url: `/api/admin/match/update/${matchId}`,
+                    body: {
+                      name: name.trim(),
+                      round: round.trim(),
+                      captain_position,
+                      date: date ? `${date}:00+08:00` : null,
+                      ...(canEditFormat && formatChanged ? format : {}),
+                    },
+                    fallback: '比赛信息已更新',
                   },
-                  { onSuccess: () => setFormatOpen(false) },
-                )
-              }
+                  { onSuccess: () => setEditOpen(false) },
+                );
+              }}
             >
-              <MatchFormatFields form={formatForm} />
+              <Form.Item
+                name="name"
+                label="赛事名称"
+                rules={[{ required: true, whitespace: true }]}
+              >
+                <Input maxLength={100} />
+              </Form.Item>
+              <Form.Item name="round" label="赛事阶段">
+                <Input maxLength={40} />
+              </Form.Item>
+              {canEditFormat ? (
+                <MatchFormatFields
+                  form={editForm}
+                  legacyFormat={BO_OPTIONS.includes(board.match.bo) ? undefined : board.match.bo}
+                  allowCustom={board.match.status === 'CREATED'}
+                />
+              ) : (
+                <Form.Item label="赛制">
+                  <Typography.Text>{matchFormatLabel(board.match.bo)}</Typography.Text>
+                </Form.Item>
+              )}
+              <Form.Item name="captain_position" label="队长分路">
+                <Select
+                  options={[
+                    { value: '', label: '不指定（沿用首位入队者为队长）' },
+                    ...['TOP', 'JUG', 'MID', 'ADC', 'SUP'].map((value) => ({
+                      value,
+                      label: label(value),
+                    })),
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item name="date" label="比赛时间（北京时间）">
+                <Input type="datetime-local" />
+              </Form.Item>
             </Form>
-          </Modal>
-
-          <Modal
-            title={`编辑赛事 · ${board.match.name}`}
-            open={editOpen}
-            okText="保存"
-            cancelText="取消"
-            confirmLoading={run.isPending}
-            onCancel={() => setEditOpen(false)}
-            onOk={() => {
-              run.mutate(
-                {
-                  url: `/api/admin/match/update/${matchId}`,
-                  body: {
-                    name: editForm.name.trim() || board.match.name,
-                    round: editForm.round,
-                    captain_position: editForm.captain_position,
-                    date: editForm.date ? `${editForm.date}:00+08:00` : null,
-                  },
-                  fallback: '比赛信息已更新',
-                },
-                { onSuccess: () => setEditOpen(false) },
-              );
-            }}
-          >
-            <Space orientation="vertical" size={10} style={{ width: '100%' }}>
-              <Input
-                placeholder="比赛名称"
-                maxLength={100}
-                value={editForm.name}
-                onChange={(event) => setEditForm({ ...editForm, name: event.target.value })}
-              />
-              <Input
-                placeholder="赛事阶段，例如「常规赛」"
-                maxLength={40}
-                value={editForm.round}
-                onChange={(event) => setEditForm({ ...editForm, round: event.target.value })}
-              />
-              <Select
-                style={{ width: '100%' }}
-                value={editForm.captain_position || undefined}
-                options={[
-                  { value: '', label: '不指定（沿用首位入队者为队长）' },
-                  ...['TOP', 'JUG', 'MID', 'ADC', 'SUP'].map((value) => ({
-                    value,
-                    label: label(value),
-                  })),
-                ]}
-                onChange={(captain_position) => setEditForm({ ...editForm, captain_position })}
-              />
-              <Input
-                type="datetime-local"
-                value={editForm.date}
-                onChange={(event) => setEditForm({ ...editForm, date: event.target.value })}
-              />
-            </Space>
           </Modal>
 
           <Modal

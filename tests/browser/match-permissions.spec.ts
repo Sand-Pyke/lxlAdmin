@@ -177,3 +177,36 @@ test('custom tournament creation submits the selected roster size, round formats
     captain_position: '',
   });
 });
+
+test('a pending BO3 tournament can change format from the main edit dialog', async ({
+  page,
+  request,
+}) => {
+  await request.get('/api/__test/reset');
+  await page.route('**/api/admin/teams/1', (route) => route.fulfill({ json: board }));
+  await page.route('**/api/admin/match/update/1', (route) =>
+    route.fulfill({ json: { msg: '比赛信息已更新' } }),
+  );
+  await page.goto('/matches/1');
+  await page.getByLabel('管理员账号').fill('admin');
+  await page.getByLabel('密码', { exact: true }).fill('fixture-only');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.getByRole('button', { name: '编辑赛事', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: /编辑赛事/ });
+  await expect(dialog.getByText('BO3', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('不指定（沿用首位入队者为队长）', { exact: true })).toBeVisible();
+  await dialog.getByLabel('赛事名称').fill('自定义赛');
+  await dialog.getByLabel('赛制', { exact: true }).click();
+  await page.getByRole('option', { name: '自定义赛事', exact: true }).click();
+  await expect(dialog.getByLabel('第 2 轮赛制')).toBeVisible();
+  const saved = page.waitForRequest((req) => req.url().endsWith('/api/admin/match/update/1'));
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  expect((await saved).postDataJSON()).toMatchObject({
+    name: '自定义赛',
+    bo: '自定义赛事',
+    custom_team_count: 4,
+    round_formats: ['BO3', 'BO3'],
+    captain_position: '',
+  });
+  await expect(dialog).toBeHidden();
+});

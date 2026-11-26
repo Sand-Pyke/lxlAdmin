@@ -258,6 +258,25 @@ try {
     body: { ...customBody, round_formats: ['BO5'] },
   });
   assert.equal(invalidCustom.status, 400);
+  const { id: editId } = await post('/api/admin/match/create', cookies.admin, {
+    name: 'Editable BO3',
+    bo: 'BO3',
+  });
+  const editRoute = `/api/admin/match/update/${editId}`;
+  const edited = { ...customBody, name: 'Edited from BO3', date: '2026-11-26T19:30:00+08:00' };
+  const rejected = await call(editRoute, {
+    method: 'POST',
+    cookie: cookies.admin,
+    body: { ...edited, round_formats: ['BO5'] },
+  });
+  assert.equal(rejected.status, 400);
+  assert.equal((await db.match.findUnique({ where: { id: editId } })).name, 'Editable BO3');
+  await post(editRoute, cookies.admin, edited);
+  const editedMatch = await db.match.findUniqueOrThrow({ where: { id: editId } });
+  assert.equal(editedMatch.name, edited.name);
+  assert.equal(editedMatch.bo, customBody.bo);
+  assert.equal(editedMatch.date.toISOString(), '2026-11-26T11:30:00.000Z');
+  assert.deepEqual(editedMatch.roundFormats, customBody.round_formats);
   const { id: customId } = await post('/api/admin/match/create', cookies.admin, customBody);
   const customFormatRoute = `/api/admin/match/set_bo/${customId}`;
   await post(customFormatRoute, cookies.admin, { ...customBody, custom_team_count: 8 });
@@ -331,13 +350,17 @@ try {
     },
   });
   const disable = { ...customBody, allow_item_cards: false };
-  const blocked = await call(customFormatRoute, {
+  const blocked = await call(`/api/admin/match/update/${customId}`, {
     method: 'POST',
     cookie: cookies.admin,
-    body: disable,
+    body: { ...disable, name: 'Rejected name' },
   });
   assert.equal(blocked.status, 400);
   assert.match((await blocked.json()).msg, /已有道具卡使用记录/);
+  assert.equal(
+    (await db.match.findUniqueOrThrow({ where: { id: customId } })).name,
+    customBody.name,
+  );
   assert.equal(await db.matchHeroProtection.count({ where: { matchId: customId } }), 1);
   await db.heroProtectionCard.delete({ where: { id: consumed.id } });
   await post(customFormatRoute, cookies.admin, disable);

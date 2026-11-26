@@ -24,7 +24,15 @@ export const defaultCustomFormat = {
   allow_item_cards: true,
 };
 
-export function MatchFormatFields({ form }: { form: FormInstance }) {
+export function MatchFormatFields({
+  form,
+  legacyFormat,
+  allowCustom = true,
+}: {
+  form: FormInstance;
+  legacyFormat?: string;
+  allowCustom?: boolean;
+}) {
   const bo = Form.useWatch('bo', form);
   const teamCount = Form.useWatch('custom_team_count', form) ?? 4;
   const roundCount = teamCount === 4 ? 2 : 3;
@@ -33,7 +41,20 @@ export function MatchFormatFields({ form }: { form: FormInstance }) {
       <Form.Item name="bo" label="赛制" rules={[{ required: true }]}>
         <Select
           virtual={false}
-          options={BO_OPTIONS.map((value) => ({ value, label: matchFormatLabel(value) }))}
+          options={[
+            ...(legacyFormat
+              ? [
+                  {
+                    value: legacyFormat,
+                    label: matchFormatLabel(legacyFormat) + '（历史赛制）',
+                    disabled: true,
+                  },
+                ]
+              : []),
+            ...BO_OPTIONS.filter((value) => allowCustom || value !== CUSTOM_FORMAT).map(
+              (value) => ({ value, label: matchFormatLabel(value) }),
+            ),
+          ]}
         />
       </Form.Item>
       {bo === CUSTOM_FORMAT && (

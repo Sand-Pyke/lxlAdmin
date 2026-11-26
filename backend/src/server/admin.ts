@@ -14,7 +14,7 @@ import {
   isOffRole,
   type ReviewStatus,
 } from '@/lib/admin-options';
-import { Prisma } from '@prisma/client';
+import { Prisma, type Match } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { isLineupReady } from '@/lib/lineup-readiness';
 import { feeCardDisplay } from '@/lib/fee-reduction';
@@ -131,64 +131,43 @@ export async function updateMatch(
   body: Record<string, unknown>,
   actorId?: number,
 ) {
-  const match = await requireMatch(matchId);
-  const started = match.status !== 'CREATED';
-  const data: {
-    name?: string;
-    round?: string;
-    date?: Date | null;
-    captainPosition?: string;
-  } = {};
-  const name = asText(body.name);
-  if (name && name !== match.name) {
-    if (await statusStillBlocked(actorId, started)) throw badRequest('比赛已开始，名称不可再修改');
-    const nameKey = name.slice(0, 100);
-    if (await prisma.match.findFirst({ where: { name: nameKey, id: { not: matchId } } })) {
-      throw badRequest('赛事名称已存在，不能重复');
-    }
-    data.name = nameKey;
-  }
-  if (body.status !== undefined) {
+  if (body.status !== undefined)
     throw badRequest('赛事状态由“结束选人并开赛”和“结束本轮”自动更新，不能手动修改');
-  }
-  const round = asText(body.round);
-  if (round && round !== match.round) {
-    if (await statusStillBlocked(actorId, started)) throw badRequest('赛事已开始，轮次不可再修改');
-    data.round = round.slice(0, 40);
-  }
-  // 排期时间可设置、可清空：传空串或 null 即清除，仅在该字段出现时更新。
-  if (body.date !== undefined) {
-    const date = parseMatchDate(body.date);
-    if (await statusStillBlocked(actorId, started && date?.getTime() !== match.date?.getTime())) {
-      throw badRequest('赛事已开始，比赛时间不可再修改');
+  const format = body.bo === undefined ? undefined : matchFormatSettings(asText(body.bo), body);
+  const isCoreAdmin = actorId !== undefined && (await isCoreAdminActor(actorId));
+  const removedTeamLogos: string[] = [];
+  const suffix = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
+    const match = await tx.match.findUnique({ where: { id: matchId } });
+    if (!match) throw notFound('赛事不存在');
+    const started = match.status !== 'CREATED';
+    const data: Prisma.MatchUpdateInput = {};
+    const name = asText(body.name).slice(0, 100);
+    if (name && name !== match.name) {
+      if (started && !isCoreAdmin) throw badRequest('比赛已开始，名称不可再修改');
+      if (await tx.match.findFirst({ where: { name, id: { not: matchId } } }))
+        throw badRequest('赛事名称已存在，不能重复');
+      data.name = name;
     }
-    data.date = date;
-  }
-  if (body.captain_position !== undefined) {
-    const position = asText(body.captain_position);
-    if (position && !isPosition(position)) throw badRequest('队长分路不合法');
-    if (position !== match.captainPosition) {
+    const round = asText(body.round).slice(0, 40);
+    if (round && round !== match.round) {
+      if (started && !isCoreAdmin) throw badRequest('赛事已开始，轮次不可再修改');
+      data.round = round;
+    }
+    if (body.date !== undefined) {
+      const date = parseMatchDate(body.date);
+      if (date?.getTime() !== match.date?.getTime()) {
+        if (started && !isCoreAdmin) throw badRequest('赛事已开始，比赛时间不可再修改');
+        data.date = date;
+      }
+    }
+    const captainPosition =
+      body.captain_position === undefined ? match.captainPosition : asText(body.captain_position);
+    if (body.captain_position !== undefined && captainPosition && !isPosition(captainPosition))
+      throw badRequest('队长分路不合法');
+    if (captainPosition !== match.captainPosition) {
       if (
         started ||
-        (await prisma.matchFeeCardUse.count({ where: { matchId } })) ||
-        (await prisma.matchSignup.count({
-          where: {
-            matchId,
-            OR: [{ teamId: { not: null } }, { feeCardInventoryId: { not: null } }],
-          },
-        }))
-      )
-        throw badRequest('已开始选人或已有报名使用降费卡，不能修改队长分路');
-      data.captainPosition = position;
-    }
-  }
-  const removedTeamLogos: string[] = [];
-  await prisma.$transaction(async (tx) => {
-    if (data.captainPosition !== undefined) {
-      await tx.$queryRaw`SELECT id FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
-      const current = await tx.match.findUniqueOrThrow({ where: { id: matchId } });
-      if (
-        current.status !== 'CREATED' ||
         (await tx.matchFeeCardUse.count({ where: { matchId } })) ||
         (await tx.matchSignup.count({
           where: {
@@ -198,28 +177,32 @@ export async function updateMatch(
         }))
       )
         throw badRequest('已开始选人或已有报名使用降费卡，不能修改队长分路');
+      data.captainPosition = captainPosition;
     }
-    await tx.match.update({ where: { id: matchId }, data });
-    if (data.captainPosition !== undefined) {
+    if (Object.keys(data).length) await tx.match.update({ where: { id: matchId }, data });
+    if (captainPosition !== match.captainPosition) {
       const previous = await tx.matchSignup.findMany({
-        where: { matchId, mainPosition: { not: data.captainPosition } },
+        where: { matchId, mainPosition: { not: captainPosition } },
         select: { captainTeamLogo: true },
       });
       removedTeamLogos.push(...previous.map((sign) => sign.captainTeamLogo));
       await tx.matchSignup.updateMany({
-        where: { matchId, mainPosition: { not: data.captainPosition } },
+        where: { matchId, mainPosition: { not: captainPosition } },
         data: { captainTeamName: '', captainTeamLogo: '' },
       });
       await tx.matchSignup.updateMany({ where: { matchId }, data: { isCaptain: false } });
-      if (data.captainPosition)
+      if (captainPosition)
         await tx.matchSignup.updateMany({
-          where: { matchId, mainPosition: data.captainPosition, isWaitlisted: false },
+          where: { matchId, mainPosition: captainPosition, isWaitlisted: false },
           data: { isCaptain: true },
         });
     }
+    return format
+      ? waitlistChangeText(await updateMatchFormat(tx, match, format, isCoreAdmin))
+      : '';
   });
   await Promise.all([...new Set(removedTeamLogos)].map(cleanupCaptainLogo));
-  return { msg: '比赛信息已更新' };
+  return { msg: `比赛信息已更新${suffix}` };
 }
 
 /** Set a match status directly; this repair action is reserved for the core admin account. */
@@ -257,6 +240,72 @@ export async function setMatchStatus(matchId: number, status: unknown, actorId: 
   return { msg: `赛事状态已设置为 ${status}` };
 }
 
+async function updateMatchFormat(
+  tx: Prisma.TransactionClient,
+  match: Match,
+  format: ReturnType<typeof matchFormatSettings>,
+  isCoreAdmin: boolean,
+) {
+  const matchId = match.id;
+  const custom = match.bo === CUSTOM_FORMAT || format.bo === CUSTOM_FORMAT;
+  if (match.status !== 'CREATED' && (custom || !isCoreAdmin))
+    throw badRequest('赛事已开始，赛制不可再修改');
+  const oldLimit = matchTeamLimit(match.bo, match.customTeamCount);
+  const newLimit = matchTeamLimit(format.bo, format.customTeamCount);
+  if (custom) {
+    if (format.allowItemCards === false && match.allowItemCards) {
+      const [feeUse, allInUse, heroUse, feeSignup] = await Promise.all([
+        tx.matchFeeCardUse.count({ where: { matchId } }),
+        tx.matchAllInCardUse.count({ where: { matchId } }),
+        tx.heroProtectionCard.count({
+          where: { usedMatchId: matchId, consumedAt: { not: null } },
+        }),
+        tx.matchSignup.count({ where: { matchId, feeCardInventoryId: { not: null } } }),
+      ]);
+      if (feeUse || allInUse || heroUse || feeSignup)
+        throw badRequest('本场赛事已有道具卡使用记录，无法关闭道具卡');
+      await tx.matchHeroProtection.deleteMany({ where: { matchId, card: { consumedAt: null } } });
+    }
+    if (
+      oldLimit !== newLimit &&
+      (await tx.matchSignup.count({
+        where: { matchId, teamId: { not: null } },
+      }))
+    )
+      throw badRequest('已有选手入队，请先清空选人草稿再修改人数');
+    if (newLimit && (await tx.team.count({ where: activeMatchTeamWhere(matchId) })) > newLimit)
+      throw badRequest('现有队伍超过新赛制名额，请先调整队伍数量');
+    if (format.minSignupRank && format.minSignupRank !== match.minSignupRank) {
+      const signups = await tx.matchSignup.findMany({
+        where: { matchId },
+        select: { rankAtSignup: true, user: { select: { profile: { select: { rank: true } } } } },
+      });
+      if (
+        signups.some(
+          (signup) =>
+            !meetsSignupRank(
+              signup.user.profile?.rank ?? signup.rankAtSignup,
+              format.minSignupRank,
+            ),
+        )
+      )
+        throw badRequest('已有报名选手低于新的最低段位，请先处理其报名');
+    }
+    if (
+      (match.bo !== format.bo || match.roundFormats.join() !== format.roundFormats.join()) &&
+      ((await tx.matchScore.count({ where: { matchId } })) ||
+        (await tx.matchMarket.count({ where: { matchId } })))
+    )
+      throw badRequest('赛事已有比分或竞猜盘口，无法修改每轮赛制');
+  }
+  await tx.match.update({ where: { id: matchId }, data: format });
+  return oldLimit !== newLimit ? rebalanceSignupWaitlist(matchId, tx) : { promoted: 0, demoted: 0 };
+}
+
+function waitlistChangeText({ promoted, demoted }: { promoted: number; demoted: number }) {
+  return promoted || demoted ? `（${promoted} 人递补为正式，${demoted} 人进入候补）` : '';
+}
+
 export async function setMatchBo(matchId: number, body: Record<string, unknown>, actorId?: number) {
   const format = matchFormatSettings(asText(body.bo), body);
   const isCoreAdmin = actorId !== undefined && (await isCoreAdminActor(actorId));
@@ -264,65 +313,9 @@ export async function setMatchBo(matchId: number, body: Record<string, unknown>,
     await tx.$queryRaw`SELECT id FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
     const match = await tx.match.findUnique({ where: { id: matchId } });
     if (!match) throw notFound('赛事不存在');
-    const custom = match.bo === CUSTOM_FORMAT || format.bo === CUSTOM_FORMAT;
-    if (match.status !== 'CREATED' && (custom || !isCoreAdmin))
-      throw badRequest('赛事已开始，赛制不可再修改');
-    const oldLimit = matchTeamLimit(match.bo, match.customTeamCount);
-    const newLimit = matchTeamLimit(format.bo, format.customTeamCount);
-    if (custom) {
-      if (format.allowItemCards === false && match.allowItemCards) {
-        const [feeUse, allInUse, heroUse, feeSignup] = await Promise.all([
-          tx.matchFeeCardUse.count({ where: { matchId } }),
-          tx.matchAllInCardUse.count({ where: { matchId } }),
-          tx.heroProtectionCard.count({
-            where: { usedMatchId: matchId, consumedAt: { not: null } },
-          }),
-          tx.matchSignup.count({ where: { matchId, feeCardInventoryId: { not: null } } }),
-        ]);
-        if (feeUse || allInUse || heroUse || feeSignup)
-          throw badRequest('本场赛事已有道具卡使用记录，无法关闭道具卡');
-        await tx.matchHeroProtection.deleteMany({ where: { matchId, card: { consumedAt: null } } });
-      }
-      if (
-        oldLimit !== newLimit &&
-        (await tx.matchSignup.count({
-          where: { matchId, teamId: { not: null } },
-        }))
-      )
-        throw badRequest('已有选手入队，请先清空选人草稿再修改人数');
-      if (newLimit && (await tx.team.count({ where: activeMatchTeamWhere(matchId) })) > newLimit)
-        throw badRequest('现有队伍超过新赛制名额，请先调整队伍数量');
-      if (format.minSignupRank && format.minSignupRank !== match.minSignupRank) {
-        const signups = await tx.matchSignup.findMany({
-          where: { matchId },
-          select: { rankAtSignup: true, user: { select: { profile: { select: { rank: true } } } } },
-        });
-        if (
-          signups.some(
-            (signup) =>
-              !meetsSignupRank(
-                signup.user.profile?.rank ?? signup.rankAtSignup,
-                format.minSignupRank,
-              ),
-          )
-        )
-          throw badRequest('已有报名选手低于新的最低段位，请先处理其报名');
-      }
-      if (
-        (match.bo !== format.bo || match.roundFormats.join() !== format.roundFormats.join()) &&
-        ((await tx.matchScore.count({ where: { matchId } })) ||
-          (await tx.matchMarket.count({ where: { matchId } })))
-      )
-        throw badRequest('赛事已有比分或竞猜盘口，无法修改每轮赛制');
-    }
-    await tx.match.update({ where: { id: matchId }, data: format });
-    return oldLimit !== newLimit
-      ? rebalanceSignupWaitlist(matchId, tx)
-      : { promoted: 0, demoted: 0 };
+    return updateMatchFormat(tx, match, format, isCoreAdmin);
   });
-  const { promoted, demoted } = result;
-  const suffix = promoted || demoted ? `（${promoted} 人递补为正式，${demoted} 人进入候补）` : '';
-  return { msg: `赛制已更新为 ${matchFormatLabel(format.bo)}${suffix}` };
+  return { msg: `赛制已更新为 ${matchFormatLabel(format.bo)}${waitlistChangeText(result)}` };
 }
 
 export async function setMatchFee(matchId: number, useFee: boolean, actorId?: number) {
