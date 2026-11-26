@@ -109,6 +109,15 @@ export function draftRequest(req, res, url, body, matches = []) {
     sync();
     return send(state);
   }
+  if (path === '/api/admin/pick/1/teams' && req.method === 'POST') {
+    const teams = body.names.map((name) => {
+      const existing = state.board.teams.find((team) => team.name === name);
+      if (existing) return existing;
+      const id = create(name);
+      return state.board.teams.find((team) => team.id === id);
+    });
+    return send({ teams, teamCount: state.board.teams.length });
+  }
   if (path === '/api/admin/teams/1') {
     sync();
     return send({ ...state.board, signs: state.signs, current_round: 1, round_pairs: [] });

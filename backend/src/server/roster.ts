@@ -629,6 +629,64 @@ export async function createTeam(matchId: number, name: string, actorId?: number
   }
 }
 
+export async function createDraftTeams(matchId: number, names: string[], actorId: number) {
+  return prisma.$transaction(async (tx) => {
+    const [match] = await tx.$queryRaw<
+      Pick<Match, 'status' | 'bo' | 'customTeamCount' | 'captainPosition'>[]
+    >`SELECT status, bo, "customTeamCount", "captainPosition" FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
+    if (!match) return { kind: 'match_not_found' as const };
+    if (await statusStillBlocked(actorId, match.status !== 'CREATED'))
+      return { kind: 'match_started' as const };
+    if (match.captainPosition) throw badRequest('请使用本场队长已设置的队伍');
+
+    const teamSelect = {
+      id: true,
+      name: true,
+      sortOrder: true,
+      draftOrder: true,
+      logo: true,
+    } as const;
+    const existing = await tx.team.findMany({ where: { matchId }, select: teamSelect });
+    const byName = new Map(existing.map((team) => [team.name.trim().toUpperCase(), team]));
+    const missing = names.filter((name) => !byName.has(name.toUpperCase()));
+    const teamCount = existing.length + missing.length;
+    if (match.bo === CUSTOM_FORMAT && missing.length && teamCount > match.customTeamCount)
+      throw badRequest(`本场自定义赛事最多 ${match.customTeamCount} 支队伍`);
+
+    if (missing.length) {
+      const sortOrder = Math.max(0, ...existing.map((team) => team.sortOrder));
+      const draftOrder = Math.max(0, ...existing.map((team) => team.draftOrder));
+      const created = await tx.team.createManyAndReturn({
+        data: missing.map((name, index) => ({
+          matchId,
+          name,
+          sortOrder: sortOrder + index + 1,
+          draftOrder: draftOrder + index + 1,
+        })),
+        select: teamSelect,
+      });
+      for (const team of created) byName.set(team.name.toUpperCase(), team);
+      await tx.match.update({ where: { id: matchId }, data: { teamCount } });
+    }
+    return {
+      kind: 'ok' as const,
+      teamCount,
+      teams: names.map((name) => {
+        const team = byName.get(name.toUpperCase())!;
+        return {
+          id: team.id,
+          name: team.name,
+          logo: team.logo,
+          sort_order: team.sortOrder,
+          draft_order: team.draftOrder,
+          player_count: 0,
+          used_fee: 0,
+        };
+      }),
+    };
+  });
+}
+
 export async function deleteTeam(teamId: number, actorId?: number) {
   const team = await prisma.team.findUnique({ where: { id: teamId } });
   if (!team) return { kind: 'not_found' as const };

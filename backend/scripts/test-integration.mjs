@@ -296,16 +296,37 @@ try {
     body: {},
   });
   assert.equal(incomplete.status, 400);
-  for (let index = 0; index < 6; index++) {
-    await post('/api/admin/team/create', cookies.core, {
-      matchId: customId,
-      name: `Custom ${index}`,
-    });
-  }
+  const names = Array.from({ length: 6 }, (_, index) => `Custom ${index}`);
+  const batchRoute = `/api/admin/pick/${customId}/teams`;
+  assert.equal((await call(batchRoute, { method: 'POST', body: { names } })).status, 401);
+  await post('/api/admin/team/create', cookies.core, { matchId: customId, name: names[0] });
+  const oversizedBatch = await call(batchRoute, {
+    method: 'POST',
+    cookie: cookies.admin,
+    body: { names: [...names, 'Extra team'] },
+  });
+  assert.equal(oversizedBatch.status, 400);
+  assert.equal(await db.team.count({ where: { matchId: customId } }), 1);
+  const [batch, retriedBatch] = await Promise.all(
+    [names, names.map((name) => name.toLowerCase())].map((selection) =>
+      post(batchRoute, cookies.admin, { names: selection }),
+    ),
+  );
+  assert.equal(batch.teamCount, 6);
+  assert.deepEqual(
+    batch.teams.map((team) => team.id),
+    retriedBatch.teams.map((team) => team.id),
+  );
   const customTeams = await db.team.findMany({
     where: { matchId: customId },
     orderBy: { sortOrder: 'asc' },
   });
+  assert.equal(customTeams.length, 6);
+  assert.deepEqual(
+    customTeams.map((team) => team.sortOrder),
+    [1, 2, 3, 4, 5, 6],
+  );
+  assert.equal((await db.match.findUniqueOrThrow({ where: { id: customId } })).teamCount, 6);
   const extraTeam = await call('/api/admin/team/create', {
     method: 'POST',
     cookie: cookies.core,

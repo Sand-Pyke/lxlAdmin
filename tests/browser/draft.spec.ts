@@ -37,6 +37,40 @@ test('draft opens while the music catalogue is still loading', async ({ page }) 
     page.getByRole('button', { name: '播放背景音乐，展开歌曲列表', exact: true }),
   ).toBeVisible();
 });
+
+test('team selection submits one batch and enters while the follow-up read is pending', async ({
+  page,
+  request,
+}) => {
+  await login(page, '/draft/1');
+  await page.getByRole('button', { name: 'DK', exact: true }).click();
+  await page.getByRole('button', { name: 'T1', exact: true }).click();
+  let finishRead!: () => void;
+  const readGate = new Promise<void>((resolve) => {
+    finishRead = resolve;
+  });
+  await page.route('**/api/admin/pick/1?live=1', async (route) => {
+    await readGate;
+    await route.continue();
+  });
+  try {
+    await page.getByRole('button', { name: /前进/ }).click();
+    await expect(page.locator('[data-team-group-id="201"]')).toBeVisible();
+    await expect(page.locator('[data-team-group-id="202"]')).toBeVisible();
+    await expect(page.locator('.big-draft-player-card').first()).toBeVisible();
+    const calls = await (await request.get('/api/__test/calls')).json();
+    const writes = calls.filter(
+      (call: { path: string }) =>
+        call.path === '/api/admin/pick/1/teams' || call.path === '/api/admin/team/create',
+    );
+    expect(writes).toEqual([
+      expect.objectContaining({ path: '/api/admin/pick/1/teams', body: { names: ['DK', 'T1'] } }),
+    ]);
+  } finally {
+    finishRead();
+  }
+});
+
 test('1.0 manual picks, unassignment, rank filtering, budget override and refresh recovery', async ({
   page,
   request,

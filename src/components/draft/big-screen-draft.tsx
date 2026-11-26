@@ -28,8 +28,8 @@ import {
   positionText,
 } from '../../data/draft-options';
 import { LEAGUE_LABEL, TEAMS_BY_LEAGUE, teamLogo } from '../../data/draft-teams';
-import { errorText, postJson as rawPostJson } from './api-client';
-import { request } from '../../api/client';
+import { errorText } from './api-client';
+import { post, request } from '../../api/client';
 import { App } from 'antd';
 import { DraftMusicPlayer, type DraftMusicTrack } from './draft-music-player';
 
@@ -84,6 +84,7 @@ export type Board = {
   };
   teams: Team[];
   budget: number;
+  total_fee?: number;
 };
 
 export type DraftData = { board: Board; signs: Sign[]; leaderboard_ready?: boolean };
@@ -144,14 +145,14 @@ export function BigScreenDraft({
   const { message } = App.useApp();
   const navigate = useNavigate();
   const viewer = useViewer();
-  const postJson = (url: string, body?: unknown) => {
+  const postJson = <T = Record<string, unknown>,>(url: string, body?: unknown) => {
     if (!can(viewer, 'draft.control')) throw new Error('当前账号没有选人操作权限');
     if (
       (url.endsWith('/discard') || url.endsWith('/clear_assignments')) &&
       !can(viewer, 'draft.reset')
     )
       throw new Error('当前账号没有清空选人的权限');
-    return rawPostJson(url, body);
+    return post<T>(url, body);
   };
   const [savingTeams, setSavingTeams] = useState(false);
   const [smartAssigning, setSmartAssigning] = useState(false);
@@ -221,11 +222,9 @@ export function BigScreenDraft({
   }, [data]);
 
   async function readFreshDraft() {
-    // Finish any existing read before asking for a snapshot taken after the write.
-    if (queryClient.isFetching({ queryKey, exact: true })) {
-      await draft.refetch({ cancelRefetch: false });
-    }
-    const updated = await draft.refetch({ cancelRefetch: false, throwOnError: true });
+    // Discard reads started before the write before requesting the new snapshot.
+    await queryClient.cancelQueries({ queryKey, exact: true });
+    const updated = await draft.refetch({ throwOnError: true });
     if (!updated.data) throw new Error('无法读取赛事选人数据');
     return updated.data;
   }
@@ -547,6 +546,7 @@ export function BigScreenDraft({
   }
 
   function toggleTeam(teamName: string) {
+    if (savingTeams) return;
     if (selectedTeams.includes(teamName)) {
       const next = selectedTeams.filter((name) => name !== teamName);
       if (
@@ -570,29 +570,53 @@ export function BigScreenDraft({
   }
 
   async function continueWithTeams() {
-    if (!board || !canProceed || savingTeams) return;
+    if (!data || !board || !canProceed || savingTeams) return;
     if (settingsBlocked) {
       message.warning('请等待本场队长完成队伍设置');
       return;
     }
     setSavingTeams(true);
     try {
-      const existingNames = new Set(board.teams.map((team) => teamKey(team.name)));
-      for (const name of selectedTeams) {
-        if (existingNames.has(teamKey(name))) continue;
+      let teamRows = board.teams;
+      if (
+        selectedTeams.some((name) => !teamRows.some((team) => teamKey(team.name) === teamKey(name)))
+      ) {
         if (board.match.captain_position) throw Error('队伍信息已更新，请重新选择本场队长队伍');
-        await postJson('/api/admin/team/create', { matchId: board.match.id, name });
-        existingNames.add(teamKey(name));
+        const { teams: saved, teamCount } = await postJson<{ teams: Team[]; teamCount: number }>(
+          `/api/admin/pick/${matchId}/teams`,
+          { names: selectedTeams },
+        );
+        await queryClient.cancelQueries({ queryKey, exact: true });
+        // Keep roster details for existing teams and use the saved IDs for new ones.
+        const updated = queryClient.setQueryData<DraftData>(queryKey, (current = data) => {
+          const knownIds = new Set(current.board.teams.map(({ id }) => id));
+          const teams = [
+            ...current.board.teams,
+            ...saved.filter(({ id }) => !knownIds.has(id)),
+          ].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
+          const { total_fee, budget } = current.board;
+          return {
+            ...current,
+            board: {
+              ...current.board,
+              teams,
+              budget:
+                current.board.match.use_fee && total_fee !== undefined
+                  ? Math.ceil(total_fee / teamCount) + 1
+                  : budget,
+            },
+          };
+        });
+        teamRows = updated?.board.teams ?? teamRows;
       }
-      const refreshed = await readFreshDraft();
-      const selectedExisting = refreshed.board.teams.filter((team) =>
-        selectedTeams.some((name) => teamKey(name) === teamKey(team.name)),
+      setTargetTeamId(
+        teamRows.find((team) => selectedTeamKeys.has(teamKey(team.name)))?.id ?? null,
       );
-      setTargetTeamId(selectedExisting[0]?.id ?? null);
       setBattleOrderVisible(false);
-      setPosition(refreshed.board.match.captain_position || 'TOP');
+      setPosition(board.match.captain_position || 'TOP');
       dirtyRef.current = true;
       setStage('workspace');
+      void queryClient.invalidateQueries({ queryKey, exact: true });
     } catch (error) {
       message.error(errorText(error, '队伍创建失败'));
     } finally {
@@ -843,7 +867,7 @@ export function BigScreenDraft({
               disabled={!canProceed || settingsBlocked}
               onClick={() => void continueWithTeams()}
             >
-              前进 →
+              {savingTeams ? '正在保存队伍…' : '前进 →'}
             </Button>
           </div>
         </section>

@@ -710,6 +710,7 @@ export async function loadTeamsBoard(matchId: number) {
     round_pairs,
     all_round_pairs,
     budget: useFee ? budgetForTeamCount(totalFee, budgetTeams.length) : 0,
+    total_fee: totalFee,
     fmvp: fmvpUser
       ? {
           user_id: fmvpUser.id,
