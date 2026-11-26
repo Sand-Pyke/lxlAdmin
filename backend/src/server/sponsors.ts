@@ -18,7 +18,7 @@ const profileSelect = {
 } as const;
 
 /** 按赞助金额从高到低，金额相同时先加入的排前面。 */
-export async function listSponsors() {
+export async function listSponsors(includePrivate = false) {
   const sponsors = await prisma.sponsor.findMany({
     orderBy: [{ amount: 'desc' }, { createdAt: 'asc' }, { id: 'asc' }],
   });
@@ -36,10 +36,19 @@ export async function listSponsors() {
     .filter((sponsor) => profileByUser.has(sponsor.userId))
     .map((sponsor) => {
       const profile = profileByUser.get(sponsor.userId)!;
+      if (sponsor.isAnonymous && !includePrivate) {
+        return {
+          id: sponsor.id,
+          amount: Number(sponsor.amount),
+          name: '匿名用户',
+          isAnonymous: true,
+        };
+      }
       return {
         id: sponsor.id,
         userId: sponsor.userId,
         amount: Number(sponsor.amount),
+        isAnonymous: sponsor.isAnonymous,
         name: profile.name,
         gameName: profile.gameName,
         avatar: profile.avatar,
@@ -62,6 +71,11 @@ function parseUserId(raw: unknown) {
   return userId;
 }
 
+function parseAnonymous(raw: unknown) {
+  if (raw !== undefined && typeof raw !== 'boolean') throw badRequest('匿名设置无效');
+  return raw;
+}
+
 /** 核心管理员：从选手库添加一名赞助人。 */
 export async function adminAddSponsor(body: Record<string, unknown>) {
   const userId = parseUserId(body.userId);
@@ -74,17 +88,23 @@ export async function adminAddSponsor(body: Record<string, unknown>) {
     throw badRequest('该选手已在赞助名单中');
   }
   const sponsor = await prisma.sponsor.create({
-    data: { userId, amount: parseAmount(body.amount) },
+    data: {
+      userId,
+      amount: parseAmount(body.amount),
+      isAnonymous: parseAnonymous(body.isAnonymous),
+    },
   });
   return { id: sponsor.id };
 }
 
-/** 核心管理员：修改赞助金额。 */
+/** 核心管理员：修改赞助金额或公开显示设置。 */
 export async function adminUpdateSponsor(id: number, body: Record<string, unknown>) {
-  const amount = parseAmount(body.amount);
+  const amount = body.amount === undefined ? undefined : parseAmount(body.amount);
+  const isAnonymous = parseAnonymous(body.isAnonymous);
+  if (amount === undefined && isAnonymous === undefined) throw badRequest('请填写要修改的内容');
   const sponsor = await prisma.sponsor.findUnique({ where: { id }, select: { id: true } });
   if (!sponsor) throw notFound('赞助记录不存在');
-  await prisma.sponsor.update({ where: { id }, data: { amount } });
+  await prisma.sponsor.update({ where: { id }, data: { amount, isAnonymous } });
   return { id };
 }
 

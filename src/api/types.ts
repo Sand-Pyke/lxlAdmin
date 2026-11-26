@@ -52,6 +52,7 @@ export type SponsorEntry = {
   id: number;
   userId: number;
   amount: number;
+  isAnonymous: boolean;
   name: string;
   gameName: string;
   avatar: string;

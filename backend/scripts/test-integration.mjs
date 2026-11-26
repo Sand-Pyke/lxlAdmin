@@ -667,6 +667,41 @@ try {
     userId: target.id,
     amount: 12.5,
   });
+  const sponsorRoute = `/api/admin/sponsors/${sponsor.id}`;
+  const readSponsors = async (path, cookie) => (await call(path, { cookie })).json();
+  const publicSponsor = async () =>
+    (await readSponsors('/api/sponsors', cookies.admin)).sponsors.find(
+      (row) => row.id === sponsor.id,
+    );
+  assert.equal((await publicSponsor()).isAnonymous, false);
+  assert.equal((await call('/api/admin/sponsors', { cookie: cookies.admin })).status, 403);
+  assert.equal(
+    (
+      await call(sponsorRoute, {
+        method: 'POST',
+        cookie: cookies.admin,
+        body: { isAnonymous: true },
+      })
+    ).status,
+    403,
+  );
+  await post(sponsorRoute, cookies.core, { isAnonymous: true });
+  assert.deepEqual(await publicSponsor(), {
+    id: sponsor.id,
+    amount: 12.5,
+    name: '匿名用户',
+    isAnonymous: true,
+  });
+  const adminSponsor = (await readSponsors('/api/admin/sponsors', cookies.core)).sponsors.find(
+    (row) => row.id === sponsor.id,
+  );
+  assert.equal(adminSponsor.userId, target.id);
+  assert.equal(adminSponsor.isAnonymous, true);
+  await post(sponsorRoute, cookies.core, { amount: 20 });
+  assert.equal((await publicSponsor()).isAnonymous, true);
+  await post(sponsorRoute, cookies.core, { isAnonymous: false });
+  assert.equal((await publicSponsor()).userId, target.id);
+  assert.equal((await publicSponsor()).amount, 20);
   assert.equal(
     (
       await call(`/api/admin/sponsors/${sponsor.id}`, {

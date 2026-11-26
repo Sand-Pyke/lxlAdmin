@@ -4,6 +4,7 @@ import {
   Avatar,
   Button,
   Card,
+  Checkbox,
   InputNumber,
   Modal,
   Popconfirm,
@@ -43,10 +44,12 @@ export default function Sponsors() {
   const [addOpen, setAddOpen] = useState(false);
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | undefined>();
   const [amount, setAmount] = useState(1);
+  const [anonymous, setAnonymous] = useState(false);
   const [playerSearch, setPlayerSearch] = useState('');
   const [playerKeyword, setPlayerKeyword] = useState('');
   const [editTarget, setEditTarget] = useState<SponsorEntry | null>(null);
   const [editAmount, setEditAmount] = useState(1);
+  const [editAnonymous, setEditAnonymous] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setPlayerKeyword(playerSearch.trim()), 300);
@@ -55,7 +58,8 @@ export default function Sponsors() {
 
   const query = useQuery({
     queryKey: ['sponsors'],
-    queryFn: ({ signal }) => request<{ sponsors: SponsorEntry[] }>('/api/sponsors', { signal }),
+    queryFn: ({ signal }) =>
+      request<{ sponsors: SponsorEntry[] }>('/api/admin/sponsors', { signal }),
   });
   const players = useQuery({
     queryKey: ['sponsor-players', playerKeyword],
@@ -68,12 +72,14 @@ export default function Sponsors() {
   });
 
   const add = useMutation({
-    mutationFn: () => post('/api/admin/sponsors', { userId: selectedPlayerId, amount }),
+    mutationFn: () =>
+      post('/api/admin/sponsors', { userId: selectedPlayerId, amount, isAnonymous: anonymous }),
     onSuccess: async (data) => {
       void message.success(data.msg || '已添加赞助人');
       setAddOpen(false);
       setSelectedPlayerId(undefined);
       setAmount(1);
+      setAnonymous(false);
       setPlayerSearch('');
       setPlayerKeyword('');
       await client.invalidateQueries({ queryKey: ['sponsors'] });
@@ -84,9 +90,12 @@ export default function Sponsors() {
   });
   const update = useMutation({
     mutationFn: (target: SponsorEntry) =>
-      post(`/api/admin/sponsors/${target.id}`, { amount: editAmount }),
+      post(`/api/admin/sponsors/${target.id}`, {
+        amount: editAmount,
+        isAnonymous: editAnonymous,
+      }),
     onSuccess: async (data) => {
-      void message.success(data.msg || '已更新赞助金额');
+      void message.success(data.msg || '已更新赞助设置');
       setEditTarget(null);
       await client.invalidateQueries({ queryKey: ['sponsors'] });
     },
@@ -125,6 +134,7 @@ export default function Sponsors() {
     setAddOpen(false);
     setSelectedPlayerId(undefined);
     setAmount(1);
+    setAnonymous(false);
     setPlayerSearch('');
     setPlayerKeyword('');
   };
@@ -212,6 +222,11 @@ export default function Sponsors() {
                 render: (_, row) => <strong>{amountText(row.amount)}</strong>,
               },
               {
+                title: '榜单显示',
+                width: 120,
+                render: (_, row) => (row.isAnonymous ? <Tag>匿名用户</Tag> : '公开'),
+              },
+              {
                 title: '操作',
                 width: 180,
                 render: (_, row) => (
@@ -223,9 +238,10 @@ export default function Sponsors() {
                       onClick={() => {
                         setEditTarget(row);
                         setEditAmount(row.amount);
+                        setEditAnonymous(row.isAnonymous);
                       }}
                     >
-                      修改金额
+                      编辑赞助
                     </Button>
                     <Popconfirm
                       title="移出赞助名单"
@@ -284,10 +300,13 @@ export default function Sponsors() {
             style={{ width: '100%' }}
             onChange={(value) => setAmount(Number(value ?? 1))}
           />
+          <Checkbox checked={anonymous} onChange={(event) => setAnonymous(event.target.checked)}>
+            在赞助榜显示为匿名用户
+          </Checkbox>
         </Space>
       </Modal>
       <Modal
-        title={`修改赞助金额 · ${editTarget ? editTarget.gameName || editTarget.name : ''}`}
+        title={`编辑赞助 · ${editTarget ? editTarget.gameName || editTarget.name : ''}`}
         open={editTarget !== null}
         okText="保存"
         cancelText="取消"
@@ -300,14 +319,22 @@ export default function Sponsors() {
         maskClosable={!update.isPending}
         closable={!update.isPending}
       >
-        <InputNumber
-          min={0.01}
-          precision={2}
-          value={editAmount}
-          addonAfter="元"
-          style={{ width: '100%', marginTop: 24 }}
-          onChange={(value) => setEditAmount(Number(value ?? 1))}
-        />
+        <Space direction="vertical" size={12} style={{ width: '100%', marginTop: 24 }}>
+          <InputNumber
+            min={0.01}
+            precision={2}
+            value={editAmount}
+            addonAfter="元"
+            style={{ width: '100%' }}
+            onChange={(value) => setEditAmount(Number(value ?? 1))}
+          />
+          <Checkbox
+            checked={editAnonymous}
+            onChange={(event) => setEditAnonymous(event.target.checked)}
+          >
+            在赞助榜显示为匿名用户
+          </Checkbox>
+        </Space>
       </Modal>
     </>
   );

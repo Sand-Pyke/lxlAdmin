@@ -996,10 +996,11 @@ model UserNotification {
 
 /// 赞助榜：核心管理员从选手库里挑选赞助人并录入金额，普通用户只读展示。
 model Sponsor {
-  id        Int      @id @default(autoincrement())
-  userId    Int      @unique
+  id          Int      @id @default(autoincrement())
+  userId      Int      @unique
   /// 赞助金额（元），保留两位小数；榜单按金额从高到低展示。
-  amount    Decimal  @db.Decimal(10, 2)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  amount      Decimal  @db.Decimal(10, 2)
+  isAnonymous Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
