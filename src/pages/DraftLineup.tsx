@@ -1,5 +1,5 @@
 import { Alert, App, Button, Card, Col, Modal, Row, Space, Tag, Result } from 'antd';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { post, request } from '../api/client';
 import type { DraftData } from '../components/draft/big-screen-draft';
@@ -11,6 +11,8 @@ import { useState } from 'react';
 
 export default function DraftLineup() {
   const { id = '' } = useParams();
+  const [search] = useSearchParams();
+  const balancedDraft = search.get('mode') === '2';
   const viewer = useViewer();
   const client = useQueryClient();
   const { message } = App.useApp();
@@ -50,7 +52,7 @@ export default function DraftLineup() {
               <Button>返回赛事管理</Button>
             </Link>
             {created && can(viewer, 'draft.control') && (
-              <Link to={`/draft/${id}`}>
+              <Link to={`/draft/${id}${balancedDraft ? '/v2' : ''}`}>
                 <Button>继续大屏选人</Button>
               </Link>
             )}

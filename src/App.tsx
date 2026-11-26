@@ -1,6 +1,6 @@
 import { Component, lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { Alert, Button, Result, Spin } from 'antd';
-import { Navigate, Outlet, Route, Routes, useLocation, useParams, Link } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSession, ViewerProvider, useViewer } from './auth';
 import Shell from './components/Shell';
@@ -28,21 +28,6 @@ function Loading() {
       <Spin size="large" />
       <p>正在加载管理平台…</p>
     </div>
-  );
-}
-function RetiredAuction() {
-  const { id = '' } = useParams();
-  return (
-    <Result
-      status="info"
-      title="大屏选人 2.0 已停用"
-      subTitle="请使用 1.0 大屏选人。"
-      extra={
-        <Link to={`/draft/${id}`}>
-          <Button type="primary">进入大屏选人</Button>
-        </Link>
-      }
-    />
   );
 }
 function PermissionGate({ core = false }: { core?: boolean }) {
@@ -144,8 +129,9 @@ export default function Application() {
           <Route element={<PermissionGate />}>
             <Route path="draft/:id" element={<Draft />} />
             <Route path="admin/pick/:id" element={<Draft />} />
-            <Route path="admin/auction/:id" element={<RetiredAuction />} />
-            <Route path="auction/:id" element={<RetiredAuction />} />
+            <Route path="admin/auction/:id" element={<Draft balancedDraft />} />
+            <Route path="auction/:id" element={<Draft balancedDraft />} />
+            <Route path="draft/:id/v2" element={<Draft balancedDraft />} />
             <Route element={<Shell />}>
               <Route element={<ModuleGate />}>
                 <Route index element={<Dashboard />} />

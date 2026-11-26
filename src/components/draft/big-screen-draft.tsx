@@ -135,9 +135,11 @@ function candidateCompare(a: Sign, b: Sign) {
 export function BigScreenDraft({
   matchId,
   musicTracks,
+  balancedDraft,
 }: {
   matchId: string;
   musicTracks: DraftMusicTrack[];
+  balancedDraft: boolean;
 }) {
   const { message } = App.useApp();
   const navigate = useNavigate();
@@ -335,12 +337,26 @@ export function BigScreenDraft({
   }
 
   async function runSmartAssign() {
-    if (!board || smartAssigning || clearingAssignments || busySign !== null) return;
+    if (
+      !board ||
+      smartAssigning ||
+      clearingAssignments ||
+      busySign !== null ||
+      (balancedDraft && !canAutoComplete)
+    )
+      return;
     setSmartAssigning(true);
     try {
-      await postJson('/api/admin/team/auto_assign', { matchId: board.match.id });
+      const result = await postJson('/api/admin/team/auto_assign', {
+        matchId: board.match.id,
+        ...(balancedDraft
+          ? { balancedDraft: true, draftTeamIds: teams.map((team) => team.id) }
+          : {}),
+      });
       dirtyRef.current = true;
-      message.success('智能分配完成');
+      message.success(
+        balancedDraft && typeof result.msg === 'string' ? result.msg : '智能分配完成',
+      );
       setBattleOrderVisible(false);
       const refreshed = await reload();
       if (refreshed) focusNextTeam(refreshed.board.teams);
@@ -379,7 +395,7 @@ export function BigScreenDraft({
         latest.board.teams.every((team) => team.player_count >= POSITIONS.length);
       if (!ready) throw new Error('请先为每支队伍选满 5 名选手');
       dirtyRef.current = false;
-      leaveDraft(`/matches/${latest.board.match.id}/lineup`);
+      leaveDraft(`/matches/${latest.board.match.id}/lineup${balancedDraft ? '?mode=2' : ''}`);
     } catch (error) {
       message.error(errorText(error, '保存失败，请稍后重试'));
     } finally {
@@ -419,6 +435,14 @@ export function BigScreenDraft({
     board?.match.captain_position && !hasDraftPicks && missingCaptainSettings.length,
   );
   const allTeams = captainTeams;
+  const firstTwoRoundsDone = teams.length >= 2 && teams.every((team) => team.player_count >= 3);
+  const canAutoComplete =
+    board?.match.status === 'CREATED' &&
+    firstTwoRoundsDone &&
+    canProceed &&
+    teams.length === selectedTeams.length &&
+    teams.some((team) => team.player_count < POSITIONS.length);
+  const manualLimit = balancedDraft ? 3 : POSITIONS.length;
   const allTeamsReady =
     allTeams.length > 0 && allTeams.every((team) => team.player_count >= POSITIONS.length);
   const showBattleOrder = allTeamsReady && battleOrderVisible;
@@ -506,7 +530,7 @@ export function BigScreenDraft({
     }
     return (
       Boolean(targetTeam) &&
-      targetMemberCount < POSITIONS.length &&
+      targetMemberCount < manualLimit &&
       !positionOccupied &&
       Boolean(assignmentPosition(sign))
     );
@@ -603,7 +627,7 @@ export function BigScreenDraft({
   }
 
   async function pick(sign: Sign) {
-    if (!targetTeam || busySign !== null) return;
+    if (!targetTeam || busySign !== null || (balancedDraft && !canPickForTarget(sign))) return;
     const minimumBudget = targetTeam.used_fee + sign.fee;
     if (
       board?.match.use_fee &&
@@ -623,6 +647,7 @@ export function BigScreenDraft({
         teamPosition: assignmentPosition(sign) || null,
         overrideBudget: overrideBudget >= minimumBudget ? overrideBudget : undefined,
         draftTeamIds: teams.map((team) => team.id),
+        ...(balancedDraft ? { balancedDraft: true } : {}),
       });
       setBudgetBlock(null);
       setOverrideBudget(0);
@@ -855,13 +880,24 @@ export function BigScreenDraft({
                       ? '补位'
                       : positionText(position)}
                 </h1>
-                <p>点击选手加入 {targetTeam?.name ?? '当前队伍'}</p>
+                <p>
+                  {balancedDraft && !allTeamsReady
+                    ? firstTwoRoundsDone
+                      ? '大屏选人 2.0 · 前两轮已完成，点击智能分配补齐阵容'
+                      : '大屏选人 2.0 · 每队手选两名队友后，由系统补齐最后两人'
+                    : '点击选手加入 ' + (targetTeam?.name ?? '当前队伍')}
+                </p>
               </div>
               <div className="big-draft-pool-actions">
                 <Button
                   icon={<ThunderboltOutlined />}
                   loading={smartAssigning}
-                  disabled={settingsBlocked || clearingAssignments || busySign !== null}
+                  disabled={
+                    settingsBlocked ||
+                    clearingAssignments ||
+                    busySign !== null ||
+                    (balancedDraft && !canAutoComplete)
+                  }
                   onClick={() => void runSmartAssign()}
                 >
                   智能分配

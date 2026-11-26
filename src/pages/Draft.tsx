@@ -7,7 +7,7 @@ import { can } from '../permissions/access';
 import { loadDraftMusic } from '../api/draft';
 import '../styles/draft.css';
 
-export default function Draft() {
+export default function Draft({ balancedDraft = false }: { balancedDraft?: boolean }) {
   const { id = '' } = useParams();
   const viewer = useViewer();
   const valid = /^\d+$/.test(id) && Number.isSafeInteger(Number(id)) && Number(id) > 0;
@@ -54,7 +54,12 @@ export default function Draft() {
             action={<Button onClick={() => void music.refetch()}>重新加载音乐</Button>}
           />
         )}
-        <BigScreenDraft key={id} matchId={id} musicTracks={music.data?.tracks || []} />
+        <BigScreenDraft
+          key={id + String(balancedDraft)}
+          matchId={id}
+          balancedDraft={balancedDraft}
+          musicTracks={music.data?.tracks || []}
+        />
       </AntApp>
     </ConfigProvider>
   );

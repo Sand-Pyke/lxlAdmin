@@ -455,12 +455,22 @@ export default function MatchManage() {
               <Space wrap>
                 <Typography.Text type="secondary">选人与对阵</Typography.Text>
                 <Button
+                  aria-label="大屏选人"
                   size="small"
                   icon={<FullscreenOutlined />}
                   disabled={statusGate(board.match.status !== 'CREATED')}
                   onClick={() => navigate(`/draft/${matchId}`)}
                 >
                   大屏选人
+                </Button>
+                <Button
+                  aria-label="大屏选人 2.0"
+                  size="small"
+                  icon={<FullscreenOutlined />}
+                  disabled={board.match.status !== 'CREATED'}
+                  onClick={() => navigate(`/draft/${matchId}/v2`)}
+                >
+                  大屏选人 2.0
                 </Button>
                 {can(viewer, 'draft.view') ? (
                   <Button

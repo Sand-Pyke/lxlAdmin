@@ -76,6 +76,19 @@ export function draftRequest(req, res, url, body, matches = []) {
     state.board.budget = 1;
     return send({ ok: true });
   }
+  if (path === '/api/__test/draft-second-round') {
+    const ids = [create('DK'), create('T1')];
+    for (const [index, id] of ids.entries()) {
+      for (let pick = 0; pick < 2; pick++) {
+        const sign = state.signs[index * 5 + pick];
+        sign.team_id = id;
+        sign.team_pos = sign.main_pos;
+        sign.is_captain = pick === 0;
+      }
+    }
+    sync();
+    return send({ ok: true });
+  }
   if (path === '/api/__test/draft-captains') {
     state.board.match.captain_position = 'TOP';
     create('队长一队');
@@ -130,9 +143,13 @@ export function draftRequest(req, res, url, body, matches = []) {
     return send({ msg: '分配完成' });
   }
   if (path === '/api/admin/team/auto_assign') {
-    clear();
+    if (!body.balancedDraft) clear();
+    const teams = body.balancedDraft
+      ? state.board.teams.filter((team) => body.draftTeamIds.includes(team.id))
+      : state.board.teams;
     for (const sign of state.signs) {
-      const team = state.board.teams.find(
+      if (sign.team_id) continue;
+      const team = teams.find(
         (team) =>
           state.signs.filter((item) => item.team_id === team.id).length < 5 &&
           !state.signs.some((item) => item.team_id === team.id && item.team_pos === sign.main_pos),

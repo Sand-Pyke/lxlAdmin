@@ -2,6 +2,7 @@ import type { Prisma, Match, MatchGameRecord, MatchScore, MatchSignup, Team } fr
 import { prisma } from '@/lib/prisma';
 import { RANK_FEES, reducedDraftRank } from '@/lib/fee-reduction';
 import { badRequest } from '@/server/api';
+import { balanceDraft } from '@/lib/draft-balance';
 import {
   CUSTOM_FORMAT,
   boForRound,
@@ -710,6 +711,7 @@ type AssignSignupInput = {
   actorId?: number;
   /** 大屏当前参与选人的队伍，避免未勾选的空队伍阻止轮次结束。 */
   draftTeamIds?: number[];
+  balancedDraft?: boolean;
 };
 
 export async function assignSignup(input: AssignSignupInput) {
@@ -750,7 +752,10 @@ async function assignSignupInTransaction(input: AssignSignupInput, tx: Prisma.Tr
     select: { status: true },
   });
   if (!signMatch) return { kind: 'match_not_found' as const };
-  if (await statusStillBlocked(input.actorId, signMatch.status !== 'CREATED'))
+  if (
+    signMatch.status !== 'CREATED' &&
+    (input.balancedDraft || (await statusStillBlocked(input.actorId, true)))
+  )
     return { kind: 'match_started' as const };
   const wasUnassigned = sign.teamId === null;
 
@@ -799,6 +804,8 @@ async function assignSignupInTransaction(input: AssignSignupInput, tx: Prisma.Tr
   const targetMemberCount = await tx.matchSignup.count({
     where: { teamId, id: { not: signId } },
   });
+  if (input.balancedDraft && sign.teamId !== teamId && targetMemberCount >= 3)
+    throw badRequest('大屏选人 2.0 的最后两个位置请使用智能分配');
   if (sign.teamId !== teamId && targetMemberCount >= POSITIONS.length) {
     return { kind: 'team_full' as const };
   }
@@ -1030,6 +1037,101 @@ export async function autoAssign(matchId: number, actorId?: number) {
   }
 
   return { kind: 'ok' as const, assigned };
+}
+
+/** 大屏 2.0：锁定已有阵容，只为选定队伍补齐剩余位置。 */
+export async function autoAssignDraftRemainder(matchId: number, teamIds: number[]) {
+  if (teamIds.length < 2 || new Set(teamIds).size !== teamIds.length)
+    throw badRequest('选人队伍范围无效');
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
+      const match = await tx.match.findUnique({ where: { id: matchId } });
+      if (!match) return { kind: 'match_not_found' as const };
+      if (match.status !== 'CREATED') return { kind: 'match_started' as const };
+      const expected = matchTeamLimit(match.bo, match.customTeamCount);
+      const [teams, signs] = await Promise.all([
+        tx.team.findMany({
+          where: { ...activeMatchTeamWhere(matchId), id: { in: teamIds } },
+          select: { id: true },
+        }),
+        tx.matchSignup.findMany({
+          where: {
+            matchId,
+            isWaitlisted: false,
+            OR: [{ teamId: null }, { teamId: { in: teamIds } }],
+          },
+          include: { user: { include: { profile: { select: { rank: true } } } } },
+        }),
+      ]);
+      if (teams.length !== teamIds.length || (expected && teams.length !== expected))
+        throw badRequest('请先选齐本场赛制要求的队伍');
+      const orders = new Map<number, number>();
+      const lineups = teams.map(({ id }) => {
+        const members = signs.filter((sign) => sign.teamId === id);
+        if (members.length < 3 || !members.some((sign) => sign.isCaptain))
+          throw badRequest('请先为每支队伍选定队长，并完成前两轮手动选人');
+        const occupied = new Set(members.map((sign) => sign.teamPosition));
+        if (
+          occupied.size !== members.length ||
+          [...occupied].some((position) => !isPosition(position))
+        )
+          throw badRequest('已有选手的位置重复或未设置，请先调整阵容');
+        orders.set(id, Math.max(...members.map((sign) => sign.positionOrder)));
+        return {
+          id,
+          fee: members.reduce((sum, sign) => sum + rankFee(signRank(sign)), 0),
+          positions: POSITIONS.filter((position) => !occupied.has(position)),
+        };
+      });
+      if (lineups.every((lineup) => lineup.positions.length === 0))
+        return {
+          kind: 'ok' as const,
+          assigned: 0,
+          feeGap:
+            Math.max(...lineups.map((lineup) => lineup.fee)) -
+            Math.min(...lineups.map((lineup) => lineup.fee)),
+        };
+      await assertCaptainTeamsReady(tx, matchId);
+      const pool = signs.filter(
+        (sign) =>
+          !sign.teamId && (!match.captainPosition || sign.mainPosition !== match.captainPosition),
+      );
+      const plan = balanceDraft(
+        lineups,
+        pool.map((sign) => ({
+          id: sign.id,
+          fee: rankFee(signRank(sign)),
+          main: sign.mainPosition,
+          secondary: sign.subPosition,
+          canSubstitute: sign.canSubstitute,
+        })),
+        match.useFee ? await matchBudget(matchId, tx) : Infinity,
+      );
+      if (!plan)
+        throw badRequest(
+          match.useFee
+            ? '未找到同时满足分路和队伍预算的完整方案，请调整手选阵容或报名分路'
+            : '未找到能补齐全部分路的方案，请调整手选阵容或报名分路',
+        );
+      for (const pick of plan.picks) {
+        const positionOrder = (orders.get(pick.teamId) ?? 0) + 1;
+        orders.set(pick.teamId, positionOrder);
+        await tx.matchSignup.update({
+          where: { id: pick.signId },
+          data: {
+            teamId: pick.teamId,
+            teamPosition: pick.position,
+            positionOrder,
+            isCaptain: false,
+          },
+        });
+      }
+      await reorderDraftAfterCompletedRound(matchId, tx, teamIds);
+      return { kind: 'ok' as const, assigned: plan.picks.length, feeGap: plan.feeGap };
+    },
+    { timeout: 15000 },
+  );
 }
 
 /** Clear all team assignments while keeping the match teams and signups. */

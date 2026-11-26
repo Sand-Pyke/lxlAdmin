@@ -412,6 +412,100 @@ try {
     'PASS custom tournament validation, team capacity, round formats and six-team wildcard',
   );
 
+  const { id: balancedId } = await post('/api/admin/match/create', cookies.admin, {
+    name: 'Balanced draft fixture',
+    bo: 'BO3',
+  });
+  const balancedTeams = await db.team.createManyAndReturn({
+    data: Array.from({ length: 4 }, (_, index) => ({
+      matchId: balancedId,
+      name: `Balanced ${index}`,
+    })),
+  });
+  const adc = ['王者', '大师', '钻石', '翡翠'];
+  const support = ['黄金', '钻石', '大师', '大师+'];
+  const balancedPlayers = await db.user.createManyAndReturn({
+    data: Array.from({ length: 20 }, (_, index) => ({
+      username: `balance-player-${index}`,
+      passwordHash,
+    })),
+  });
+  const balancedSignups = await db.matchSignup.createManyAndReturn({
+    data: balancedPlayers.map((player, index) => {
+      const team = Math.floor(index / 5);
+      const slot = index % 5;
+      const assigned = slot < 3 && index !== 2;
+      return {
+        matchId: balancedId,
+        userId: player.id,
+        mainPosition: positions[slot],
+        rankAtSignup: ['王者', '黄金', '黄金', adc[team], support[team]][slot],
+        teamId: assigned ? balancedTeams[team].id : null,
+        teamPosition: assigned ? positions[slot] : '',
+        positionOrder: assigned ? slot + 1 : 0,
+        isCaptain: slot === 0,
+      };
+    }),
+  });
+  const balancedBody = {
+    matchId: balancedId,
+    balancedDraft: true,
+    draftTeamIds: balancedTeams.map((team) => team.id),
+  };
+  const autoRoute = '/api/admin/team/auto_assign';
+  assert.equal(
+    (await call(autoRoute, { method: 'POST', cookie: cookies.admin, body: balancedBody })).status,
+    400,
+  );
+  const assignRoute = '/api/admin/team/assign';
+  await post(assignRoute, cookies.admin, {
+    ...balancedBody,
+    signId: balancedSignups[2].id,
+    teamId: balancedTeams[0].id,
+    teamPosition: 'MID',
+  });
+  const fourthPick = await call(assignRoute, {
+    method: 'POST',
+    cookie: cookies.admin,
+    body: {
+      ...balancedBody,
+      signId: balancedSignups[3].id,
+      teamId: balancedTeams[0].id,
+      teamPosition: 'ADC',
+    },
+  });
+  assert.equal(fourthPick.status, 400);
+  const missing = balancedSignups[3];
+  await db.matchSignup.update({ where: { id: missing.id }, data: { isWaitlisted: true } });
+  assert.equal(
+    (await call(autoRoute, { method: 'POST', cookie: cookies.admin, body: balancedBody })).status,
+    400,
+  );
+  assert.equal(
+    await db.matchSignup.count({ where: { matchId: balancedId, teamId: { not: null } } }),
+    12,
+  );
+  await db.matchSignup.update({ where: { id: missing.id }, data: { isWaitlisted: false } });
+  const completed = await post(autoRoute, cookies.admin, balancedBody);
+  assert.equal(completed.assigned, 8);
+  assert.match(completed.msg, /最大差 0 分/);
+  const balancedBoard = await (
+    await call(`/api/admin/teams/${balancedId}`, { cookie: cookies.admin })
+  ).json();
+  assert.deepEqual(
+    balancedBoard.teams.map((team) => [team.player_count, team.used_fee]),
+    Array.from({ length: 4 }, () => [5, 21]),
+  );
+  for (const [index, signup] of balancedSignups.entries()) {
+    if (index % 5 >= 3) continue;
+    const assigned = balancedBoard.signs.find((sign) => sign.id === signup.id);
+    assert.equal(assigned.team_id, balancedTeams[Math.floor(index / 5)].id);
+    assert.equal(assigned.team_pos, positions[index % 5]);
+  }
+  assert.equal((await post(autoRoute, cookies.admin, balancedBody)).assigned, 0);
+  console.log(
+    'PASS draft 2.0 preserves manual picks, rejects incomplete plans and balances all final teams',
+  );
   const season = await post('/api/admin/season/create', cookies.core, { name: 'Fixture season' });
   const seasonId = season.id;
   await db.teamSeason.update({ where: { id: seasonId }, data: { status: 'DRAFTING' } });

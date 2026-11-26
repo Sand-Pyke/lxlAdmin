@@ -8,7 +8,7 @@ async function login(page: Page, path = '/matches') {
 async function enter(page: Page) {
   await login(page);
   await page.locator('a[href="/matches/1"]').click();
-  await page.getByRole('button', { name: /大屏选人/ }).click();
+  await page.getByRole('button', { name: '大屏选人', exact: true }).click();
   await page.getByRole('button', { name: 'DK', exact: true }).click();
   await page.getByRole('button', { name: 'T1', exact: true }).click();
   await page.getByRole('button', { name: /前进/ }).click();
@@ -126,18 +126,14 @@ test('clear keeps teams, browser-back can keep editing, and discarding removes t
   expect(result.signs).toHaveLength(10);
 });
 
-test('captain setup gates picking and retired auction links lead to 1.0', async ({
-  page,
-  request,
-}) => {
+test('captain setup gates picking in both draft modes', async ({ page, request }) => {
   await request.get('/api/__test/draft-captains');
   await login(page, '/draft/1');
   await expect(page.getByText('等待 2 位队长完成队伍设置，暂不能开始选人。')).toBeVisible();
   await expect(page.getByRole('button', { name: /智能分配/ })).toBeDisabled();
   await page.goto('/admin/auction/1');
-  await expect(page.getByText('大屏选人 2.0 已停用')).toBeVisible();
-  await page.getByRole('link', { name: '进入大屏选人' }).click();
-  await expect(page).toHaveURL(/\/draft\/1$/);
+  await expect(page.getByText(/大屏选人 2.0 · 每队手选/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /智能分配$/ })).toBeDisabled();
 });
 
 test('music playback and volume work through the media proxy', async ({ page }) => {
@@ -214,4 +210,35 @@ test('a missing music endpoint uses legacy tracks and music failures do not prev
   status = 404;
   await page.getByRole('button', { name: '重新加载音乐' }).click();
   await expect(page.getByText('音乐列表加载失败，选人仍可继续')).toHaveCount(0);
+});
+
+test('2.0 enables balanced completion after two manual rounds and preserves those picks', async ({
+  page,
+  request,
+}) => {
+  await request.get('/api/__test/draft-second-round');
+  await login(page, '/matches/1');
+  await page.getByRole('button', { name: '大屏选人 2.0', exact: true }).click();
+  await expect(page).toHaveURL(/\/draft\/1\/v2$/);
+  const auto = page.getByRole('button', { name: /智能分配$/ });
+  await expect(auto).toBeDisabled();
+  await page.getByRole('tab', { name: /MID/ }).click();
+  await page.locator('[data-sign-id="103"]').click();
+  await expect(page.locator('[data-team-group-id="201"]')).toContainText('选人测试3#1234');
+  await expect(auto).toBeDisabled();
+  await page.getByRole('tab', { name: /MID/ }).click();
+  await page.locator('[data-sign-id="108"]').click();
+  await expect(auto).toBeEnabled();
+  const submitted = page.waitForRequest((req) => req.url().endsWith('/api/admin/team/auto_assign'));
+  await auto.click();
+  expect((await submitted).postDataJSON()).toMatchObject({
+    balancedDraft: true,
+    draftTeamIds: [201, 202],
+  });
+  const save = page.getByRole('button', { name: /保存并查看对阵$/ });
+  await expect(save).toBeEnabled();
+  await expect(page.locator('[data-team-group-id="201"]')).toContainText('选人测试3#1234');
+  await expect(page.locator('[data-team-group-id="202"]')).toContainText('选人测试8#1234');
+  await save.click();
+  await expect(page).toHaveURL(/\/lineup\?mode=2$/);
 });

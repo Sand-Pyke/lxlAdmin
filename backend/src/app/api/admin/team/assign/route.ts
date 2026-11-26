@@ -26,6 +26,7 @@ export const POST = adminRoute(async ({ body, adminId }) => {
         typeof body.teamPosition === 'string' && body.teamPosition ? body.teamPosition : null,
       overrideBudget,
       actorId: adminId,
+      balancedDraft: body.balancedDraft === true,
       draftTeamIds: Array.isArray(body.draftTeamIds)
         ? body.draftTeamIds.map((id) => requiredId(id, '选人队伍参数无效'))
         : undefined,
