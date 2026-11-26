@@ -26,11 +26,18 @@ test('regular game and season market opening preserve fixture and source IDs', a
   await expect(page.getByRole('combobox', { name: '竞猜比赛', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '开盘', exact: true }).click();
   await select(page, '竞猜比赛', '竞猜验收常规赛');
-  await expect(page.getByRole('button', { name: '开盘 / 更新赔率', exact: true })).toBeDisabled();
+  await expect(
+    page
+      .getByRole('dialog', { name: '开盘', exact: true })
+      .getByRole('button', { name: '开盘', exact: true }),
+  ).toBeDisabled();
   await select(page, '竞猜对阵', '朱雀 vs 玄武 · 第 1 轮');
   await select(page, '竞猜盘口范围', '第 2 局');
-  await page.getByRole('button', { name: '开盘 / 更新赔率', exact: true }).click();
-  await expect(page.getByRole('dialog').filter({ hasText: '确认开盘 / 更新赔率？' })).toBeVisible();
+  await page
+    .getByRole('dialog', { name: '开盘', exact: true })
+    .getByRole('button', { name: '开盘', exact: true })
+    .click();
+  await expect(page.getByRole('dialog').filter({ hasText: '确认开盘？' })).toBeVisible();
   let calls = await (await request.get('/api/__test/calls')).json();
   expect(
     calls.filter((call: { path: string }) => call.path === '/api/admin/markets/open'),
@@ -47,7 +54,10 @@ test('regular game and season market opening preserve fixture and source IDs', a
   await select(page, '竞猜赛事类型', '战队赛');
   await expect(page.getByRole('combobox', { name: '竞猜盘口范围', exact: true })).toBeDisabled();
   await select(page, '竞猜比赛', '竞猜验收战队赛');
-  await page.getByRole('button', { name: '开盘 / 更新赔率', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: '开盘', exact: true })
+    .getByRole('button', { name: '开盘', exact: true })
+    .click();
   await page.getByRole('button', { name: '确认执行', exact: true }).click();
   await expect(row(page, 46)).toContainText('战队赛 · 大场');
   calls = await (await request.get('/api/__test/calls')).json();
@@ -66,10 +76,13 @@ test('opening confirmation can return to the form and failed requests preserve t
   await select(page, '竞猜比赛', '竞猜验收常规赛');
   await select(page, '竞猜对阵', '朱雀 vs 玄武 · 第 1 轮');
   await select(page, '竞猜盘口范围', '第 2 局');
-  const confirmation = page.getByRole('dialog', { name: '确认开盘 / 更新赔率？', exact: true });
-  await page.getByRole('button', { name: '开盘 / 更新赔率', exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: '确认开盘？', exact: true });
+  await page
+    .getByRole('dialog', { name: '开盘', exact: true })
+    .getByRole('button', { name: '开盘', exact: true })
+    .click();
   await confirmation.getByRole('button', { name: '取消', exact: true }).click();
-  const form = page.getByRole('dialog', { name: '开盘与赔率', exact: true });
+  const form = page.getByRole('dialog', { name: '开盘', exact: true });
   await expect(form).toBeVisible();
   await expect(form).toContainText('朱雀 vs 玄武');
   await expect(form).toContainText('第 2 局');
@@ -80,7 +93,7 @@ test('opening confirmation can return to the form and failed requests preserve t
   await page.route('**/api/admin/markets/open', (route) =>
     route.fulfill({ status: 409, json: { error: '开盘失败，请刷新重试' } }),
   );
-  await form.getByRole('button', { name: '开盘 / 更新赔率', exact: true }).click();
+  await form.getByRole('button', { name: '开盘', exact: true }).click();
   await page.getByRole('button', { name: '确认执行', exact: true }).click();
   await expect(confirmation).toContainText('开盘失败，请刷新重试');
   await confirmation.getByRole('button', { name: '取消', exact: true }).click();
@@ -100,7 +113,7 @@ test('bets, close, reopen, settlement and refund match old management workflows'
   await row(page, 41).getByRole('button', { name: '下注明细' }).click();
   const drawer = page.getByRole('dialog').filter({ hasText: '下注明细 ·' });
   await expect(drawer.getByText('测试下注选手')).toBeVisible();
-  await expect(drawer.getByRole('columnheader', { name: '预计返还', exact: true })).toBeVisible();
+  await expect(drawer.getByRole('columnheader', { name: '猜中返还', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(drawer).toBeHidden();
   await row(page, 41).getByRole('button', { name: '封盘', exact: true }).click();
@@ -194,7 +207,7 @@ test('mobile betting page remains usable without document overflow', async ({ pa
     animations: 'disabled',
   });
   await page.getByRole('button', { name: '开盘', exact: true }).click();
-  const form = page.getByRole('dialog', { name: '开盘与赔率', exact: true });
+  const form = page.getByRole('dialog', { name: '开盘', exact: true });
   await expect(form).toBeInViewport({ ratio: 1 });
   await expect(form.getByRole('combobox', { name: '竞猜比赛', exact: true })).toBeVisible();
   await page.screenshot({

@@ -1,4 +1,12 @@
-export type Outcome = { id: number; outcomeKey: string; label: string; odds: number; prob: number };
+export type Outcome = {
+  id: number;
+  outcomeKey: string;
+  label: string;
+  odds: number;
+  prob: number;
+  poolStake?: number;
+  poolReady?: boolean;
+};
 export type MarketSource = {
   name: string;
   kind: string;
@@ -14,6 +22,8 @@ export type Market = {
   teamOneId: number | null;
   teamTwoId: number | null;
   status: string;
+  pricingMode?: string;
+  voidReason?: string | null;
   bettingCloseAt: string;
   source: MarketSource;
   outcomes: Outcome[];
@@ -49,7 +59,8 @@ export type Bet = {
   outcomeLabel: string;
   stake: number;
   odds_at_bet: number;
-  potential_payout: number;
+  final_odds?: number | null;
+  potential_payout: number | null;
   status: string;
   settled_payout: number;
   createdAt: string;
@@ -108,6 +119,7 @@ export function openMarketBody(
   };
 }
 export function reopenMarketBody(market: Market): OpenBody {
+  if (market.pricingMode === 'POOL') throw new Error('奖池盘口封盘后不能重新开盘');
   if (!['OPEN', 'CLOSED'].includes(market.status))
     throw new Error('已结算或作废的盘口不能重新开盘');
   if (market.matchId != null) {

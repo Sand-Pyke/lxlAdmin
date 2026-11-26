@@ -659,6 +659,112 @@ try {
   console.log(
     'PASS core-only shop/markets and transactional recharge ledger/notification, sponsor CRUD',
   );
+  const poolMatch = await db.match.create({
+    data: { name: 'Pool fixture', status: 'LIVE', bo: 'BO3' },
+  });
+  const [poolTeamOne, poolTeamTwo] = await db.team.createManyAndReturn({
+    data: [
+      { matchId: poolMatch.id, name: 'Pool A', sortOrder: 1 },
+      { matchId: poolMatch.id, name: 'Pool B', sortOrder: 2 },
+    ],
+  });
+  const opening = { matchId: poolMatch.id, teamOneId: poolTeamOne.id, teamTwoId: poolTeamTwo.id };
+  const { market_id: poolId } = await post('/api/admin/markets/open', cookies.core, opening);
+  const { market_id: oneSidedId } = await post('/api/admin/markets/open', cookies.core, {
+    ...opening,
+    roundNo: 1,
+  });
+  assert.equal(
+    (await db.matchMarket.findUniqueOrThrow({ where: { id: poolId } })).pricingMode,
+    'POOL',
+  );
+  const poolOutcomes = await db.marketOutcome.findMany({
+    where: { marketId: poolId },
+    orderBy: { outcomeKey: 'asc' },
+  });
+  const [poolBettorA, poolBettorB, poolBettorC, poolBettorD] = await db.user.createManyAndReturn({
+    data: ['poolA', 'poolB', 'poolC', 'poolD'].map((username) => ({ username, passwordHash })),
+  });
+  function addPoolBet(marketId, outcomeId, userId, stake) {
+    return db.bet.create({
+      data: { marketId, outcomeId, userId, stake, oddsAtBet: 1, potentialPayout: stake },
+    });
+  }
+  await addPoolBet(poolId, poolOutcomes[0].id, poolBettorA.id, 100);
+  await addPoolBet(poolId, poolOutcomes[1].id, poolBettorB.id, 100);
+  const poolDetail = `/api/admin/markets/${poolId}/bets`;
+  const readPool = async () => (await call(poolDetail, { cookie: cookies.core })).json();
+  assert.deepEqual(
+    (await readPool()).outcomes.map((o) => o.odds),
+    [1.9, 1.9],
+  );
+  await addPoolBet(poolId, poolOutcomes[0].id, poolBettorC.id, 400);
+  assert.deepEqual(
+    (await readPool()).outcomes.map((o) => o.odds),
+    [1.18, 5.5],
+  );
+  await post(`/api/admin/markets/${poolId}/close`, cookies.core, {});
+  assert.equal((await readPool()).market.status, 'CLOSED');
+  assert.deepEqual(
+    (await readPool()).bets.map((o) => o.potential_payout),
+    [472, 550, 118],
+  );
+  await post(`/api/admin/markets/${poolId}/settle`, cookies.core, { winnerKey: 'TEAM_ONE_WIN' });
+  assert.equal(
+    (await db.pointWallet.findUniqueOrThrow({ where: { userId: poolBettorC.id } })).balance,
+    472,
+  );
+  const oneSided = await db.marketOutcome.findFirstOrThrow({ where: { marketId: oneSidedId } });
+  await addPoolBet(oneSidedId, oneSided.id, poolBettorB.id, 500);
+  await db.matchMarket.update({ where: { id: oneSidedId }, data: { bettingCloseAt: new Date(0) } });
+  const closeByDeadline = await call(`/api/admin/markets/${oneSidedId}/bets`, {
+    cookie: cookies.core,
+  });
+  const refunded = await closeByDeadline.json();
+  assert.equal(refunded.market.status, 'VOID');
+  assert.equal(refunded.market.voidReason, 'NO_OPPOSITION');
+  assert.equal(refunded.bets[0].settled_payout, 500);
+  assert.equal(
+    (await db.pointWallet.findUniqueOrThrow({ where: { userId: poolBettorB.id } })).balance,
+    500,
+  );
+  await call('/api/admin/markets/' + oneSidedId + '/bets', { cookie: cookies.core });
+  assert.equal(
+    await db.pointTransaction.count({
+      where: { userId: poolBettorB.id, refId: oneSidedId, type: 'BET_REFUND' },
+    }),
+    1,
+  );
+  for (const [roundNo, reason, stake] of [
+    [2, 'INSUFFICIENT_POOL', 49],
+    [3, 'ODDS_LIMIT', 50],
+  ]) {
+    const { market_id: guardedId } = await post('/api/admin/markets/open', cookies.core, {
+      ...opening,
+      roundNo,
+    });
+    const [first, second] = await db.marketOutcome.findMany({
+      where: { marketId: guardedId },
+      orderBy: { outcomeKey: 'asc' },
+    });
+    await addPoolBet(guardedId, first.id, poolBettorA.id, 500);
+    await addPoolBet(guardedId, second.id, poolBettorB.id, stake);
+    if (reason === 'ODDS_LIMIT') {
+      await addPoolBet(guardedId, first.id, poolBettorC.id, 500);
+      await addPoolBet(guardedId, first.id, poolBettorD.id, 100);
+    }
+    const closeResult = await post(`/api/admin/markets/${guardedId}/close`, cookies.core, {});
+    assert.equal(closeResult.voided, true);
+    assert.equal(
+      (await db.matchMarket.findUniqueOrThrow({ where: { id: guardedId } })).voidReason,
+      reason,
+    );
+    const refunds = await db.bet.findMany({ where: { marketId: guardedId } });
+    assert.ok(refunds.every((bet) => bet.status === 'REFUNDED' && bet.settledPayout === bet.stake));
+  }
+  console.log(
+    'PASS pool odds freeze at close and refund when either side is too small or the quote exceeds the cap',
+  );
   const final = await db.match.create({
     data: { name: 'Fixture final', status: 'LIVE', bo: 'BO1', prizePoolJson: '{"1":100,"2":60}' },
   });
@@ -777,7 +883,12 @@ try {
       ['REFUNDED', 25],
     ],
   );
-  assert.equal(await db.userNotification.count({ where: { type: 'BET_RESULT' } }), 3);
+  assert.equal(
+    await db.userNotification.count({
+      where: { type: 'BET_RESULT', userId: { in: finalists.map((sign) => sign.userId) } },
+    }),
+    3,
+  );
   const ended = await post(`/api/admin/match/round/end/${final.id}`, cookies.core, { roundNo: 1 });
   assert.equal(ended.finished, true);
   assert.equal(ended.warning, undefined);

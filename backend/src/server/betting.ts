@@ -3,12 +3,14 @@ import { prisma } from '@/lib/prisma';
 import { badRequest, forbidden, notFound } from '@/server/api';
 import { pairTeams, rankFee, signRank } from '@/server/roster';
 import { matchOdds, payoutFor } from '@/server/odds';
+import { POOL_ALL_IN_LIMIT, POOL_PRICING, poolQuote, poolVoidReason } from '@/lib/pool-odds';
 import { applyLedger, lockWallet } from '@/server/points';
 import { boForRound, CUSTOM_FORMAT, gameCountForBo, marketRoundLabel } from '@/lib/admin-options';
 import { isLineupReady } from '@/lib/lineup-readiness';
 import { resolveMarketCloseAt } from '@/server/market-window';
 import {
   lockMarket,
+  closeMarketInTransaction,
   settleMarketInTransaction,
   voidMarketInTransaction,
   type OutcomeKey,
@@ -272,24 +274,19 @@ export async function openMarket(body: Record<string, unknown>) {
       if (scored?.status === 'FINISHED' || (scored && (scored.scoreOne > 0 || scored.scoreTwo > 0)))
         throw badRequest('该场已录入比分，不能再开盘');
     }
-    let feeOne: number;
-    let feeTwo: number;
     let nameOne: string;
     let nameTwo: string;
 
     if (matchId !== null && pairing) {
-      const {
-        source,
-        feeOne: a,
-        feeTwo: b,
-      } = await regularTeamFees(matchId, pairing.teamOneId, pairing.teamTwoId);
-      feeOne = a;
-      feeTwo = b;
       const names = await teamNamesRegular(pairing.teamOneId, pairing.teamTwoId);
       nameOne = names.one;
       nameTwo = names.two;
 
       if (roundNo !== null) {
+        const source = await tx.match.findUniqueOrThrow({
+          where: { id: matchId },
+          select: { bo: true, roundFormats: true },
+        });
         const bo =
           source.bo === CUSTOM_FORMAT
             ? boForRound(source.bo, pairing.roundNo, source.roundFormats)
@@ -301,9 +298,10 @@ export async function openMarket(body: Record<string, unknown>) {
       }
     } else {
       if (roundNo !== null) throw badRequest('战队赛暂不支持分小场，请直接开大场盘口');
-      const { source, feeOne: a, feeTwo: b } = await seasonTeamFees(seasonMatchId!);
-      feeOne = a;
-      feeTwo = b;
+      const source = await tx.teamSeasonMatch.findUniqueOrThrow({
+        where: { id: seasonMatchId! },
+        select: { teamOneId: true, teamTwoId: true },
+      });
       const names = await teamNamesSeason(source.teamOneId, source.teamTwoId);
       nameOne = names.one;
       nameTwo = names.two;
@@ -337,13 +335,20 @@ export async function openMarket(body: Record<string, unknown>) {
       throw badRequest('该盘口已结算或作废，不能重新开盘');
     const openedAt = new Date();
     const live = existing?.status === 'OPEN' && existing.bettingCloseAt > openedAt;
+    if (existing?.pricingMode === POOL_PRICING) {
+      if (!live) throw badRequest('奖池盘口封盘后不能重新开盘');
+      return { market_id: existing.id, reused: true };
+    }
     const resolvedCloseAt = resolveMarketCloseAt(
       existing && live ? existing.bettingCloseAt : null,
       openedAt.getTime(),
     );
-    const { probA, probB, oddsA, oddsB } = matchOdds(feeOne, feeTwo, returnRate, sigma);
-
     if (existing && (existing.status === 'OPEN' || existing.status === 'CLOSED')) {
+      const { feeOne, feeTwo } =
+        matchId !== null && pairing
+          ? await regularTeamFees(matchId, pairing.teamOneId, pairing.teamTwoId)
+          : await seasonTeamFees(seasonMatchId!);
+      const { probA, probB, oddsA, oddsB } = matchOdds(feeOne, feeTwo, returnRate, sigma);
       // 更新已有关盘时间与赔率（若选项未被手动覆盖）；封盘后重新开盘即恢复 OPEN。
       const outcomes = await tx.marketOutcome.findMany({ where: { marketId: existing.id } });
       for (const outcome of outcomes) {
@@ -375,6 +380,7 @@ export async function openMarket(body: Record<string, unknown>) {
     const market = await tx.matchMarket.create({
       data: {
         marketKind,
+        pricingMode: POOL_PRICING,
         matchId,
         seasonMatchId,
         roundNo,
@@ -395,15 +401,15 @@ export async function openMarket(body: Record<string, unknown>) {
           marketId: market.id,
           outcomeKey: 'TEAM_ONE_WIN',
           label: nameOne,
-          prob: probA,
-          odds: oddsA,
+          prob: 0.5,
+          odds: 1,
         },
         {
           marketId: market.id,
           outcomeKey: 'TEAM_TWO_WIN',
           label: nameTwo,
-          prob: probB,
-          odds: oddsB,
+          prob: 0.5,
+          odds: 1,
         },
       ],
     });
@@ -472,6 +478,9 @@ export async function placeBet(
           : `普通单注需在 ${market.minStake}~${maximum} 冠军币之间`,
       );
 
+    if (market.pricingMode === POOL_PRICING && allIn && stake > POOL_ALL_IN_LIMIT)
+      throw badRequest(`奖池盘口 ALL IN 最多 ${POOL_ALL_IN_LIMIT} 冠军币`);
+
     if (await isParticipant(market, userId)) throw forbidden('参赛选手不能投注本场比赛');
 
     // The market lock makes double clicks, retries and concurrent opposite-side
@@ -488,7 +497,8 @@ export async function placeBet(
         throw badRequest('冠军币余额已变化，请刷新余额后重新选择 ALL IN');
     }
 
-    const odds = outcome.odds;
+    const pooled = market.pricingMode === POOL_PRICING;
+    const odds = pooled ? 1 : outcome.odds;
     const potential = payoutFor(stake, odds);
     if (!Number.isSafeInteger(potential) || potential > 2_147_483_647)
       throw badRequest('预计返还金额超出支持范围，请减少下注金额');
@@ -500,8 +510,8 @@ export async function placeBet(
     return {
       bet_id: bet.id,
       stake,
-      odds: Number(odds.toFixed(2)),
-      potential_payout: potential,
+      odds: pooled ? null : Number(odds.toFixed(2)),
+      potential_payout: pooled ? null : potential,
       balance,
     };
   });
@@ -521,30 +531,42 @@ export async function voidMarket(marketId: number) {
 
 /** 封盘：把盘口置为 CLOSED，此后不可再投注（已投注单保留，待结算或作废）。 */
 export async function closeMarket(marketId: number) {
-  return prisma.$transaction(async (tx) => {
-    await lockMarket(tx, marketId);
-    const market = await tx.matchMarket.findUnique({ where: { id: marketId } });
-    if (!market) throw notFound('盘口不存在');
-    if (market.status === 'SETTLED') throw badRequest('盘口已结算，不能封盘');
-    if (market.status === 'VOID') throw badRequest('盘口已作废，不能封盘');
-    if (market.status === 'CLOSED') return { market_id: marketId, closed: false };
-
-    await tx.matchMarket.update({
-      where: { id: marketId },
-      data: { status: 'CLOSED', bettingCloseAt: new Date() },
-    });
-    return { market_id: marketId, closed: true };
-  });
+  return prisma.$transaction(
+    async (tx) => {
+      await lockMarket(tx, marketId);
+      const market = await tx.matchMarket.findUnique({ where: { id: marketId } });
+      if (!market) throw notFound('盘口不存在');
+      if (market.status === 'SETTLED') throw badRequest('盘口已结算，不能封盘');
+      if (market.status === 'VOID') throw badRequest('盘口已作废，不能封盘');
+      const result = await closeMarketInTransaction(tx, marketId, undefined, market);
+      return {
+        market_id: marketId,
+        ...result,
+        ...(result.voided ? { msg: '奖池未达到结算条件，盘口已作废并退回本金' } : {}),
+      };
+    },
+    { timeout: 30000 },
+  );
 }
 
 // ---------- 查询 ----------
 
 /** The deadline is enforced on the server even if nobody has the page open. */
 export async function closeExpiredMarkets() {
-  return prisma.matchMarket.updateMany({
-    where: { status: 'OPEN', bettingCloseAt: { lte: new Date() } },
+  const now = new Date();
+  const expired = { status: 'OPEN' as const, bettingCloseAt: { lte: now } };
+  await prisma.matchMarket.updateMany({
+    where: { ...expired, pricingMode: { not: POOL_PRICING } },
     data: { status: 'CLOSED' },
   });
+  const pools = await prisma.matchMarket.findMany({
+    where: { ...expired, pricingMode: POOL_PRICING },
+    select: { id: true },
+    orderBy: { id: 'asc' },
+  });
+  for (const { id } of pools) {
+    await prisma.$transaction((tx) => closeMarketInTransaction(tx, id, now), { timeout: 30000 });
+  }
 }
 
 async function marketSourceInfo(market: {
@@ -608,6 +630,38 @@ function presentMarketOutcomes<T extends { outcomeKey: string; label: string }>(
   });
 }
 
+async function poolOutcomes<T extends { id: number; odds: number; prob: number }>(
+  market: MatchMarket,
+  outcomes: T[],
+) {
+  if (market.pricingMode !== POOL_PRICING) return outcomes;
+  const rows = await prisma.bet.groupBy({
+    by: ['outcomeId'],
+    where: { marketId: market.id },
+    _sum: { stake: true },
+    _count: { _all: true },
+  });
+  const pool = new Map(rows.map((row) => [row.outcomeId, row]));
+  const total = rows.reduce((sum, row) => sum + (row._sum.stake ?? 0), 0);
+  const smallest = Math.min(...outcomes.map((outcome) => pool.get(outcome.id)?._sum.stake ?? 0));
+  return outcomes.map((outcome) => {
+    const poolStake = pool.get(outcome.id)?._sum.stake ?? 0;
+    const poolBetCount = pool.get(outcome.id)?._count._all ?? 0;
+    return {
+      ...outcome,
+      poolStake,
+      poolBetCount,
+      ...(market.status === 'OPEN'
+        ? {
+            odds: poolQuote(poolStake, total - poolStake, market.returnRate).odds,
+            poolReady: !poolVoidReason(smallest, total - smallest, market.returnRate),
+            prob: total ? poolStake / total : 0.5,
+          }
+        : {}),
+    };
+  });
+}
+
 export async function listMarkets(onlyOpen = false) {
   await closeExpiredMarkets();
   const markets = await prisma.matchMarket.findMany({
@@ -642,7 +696,11 @@ async function presentMarkets(markets: MatchMarket[]) {
   for (const market of markets) {
     const outcomes = await prisma.marketOutcome.findMany({ where: { marketId: market.id } });
     const source = await marketSourceInfo(market);
-    result.push({ ...market, source, outcomes: presentMarketOutcomes(outcomes, source) });
+    result.push({
+      ...market,
+      source,
+      outcomes: await poolOutcomes(market, presentMarketOutcomes(outcomes, source)),
+    });
   }
   return result;
 }
@@ -773,7 +831,7 @@ export async function getMarketDetail(marketId: number, userId?: number) {
   return {
     ...market,
     source,
-    outcomes: presentMarketOutcomes(outcomes, source),
+    outcomes: await poolOutcomes(market, presentMarketOutcomes(outcomes, source)),
     my_staked: spent,
     has_bet: myBets.length > 0,
     is_participant: userId ? await isParticipant(market, userId) : false,
@@ -792,7 +850,7 @@ export async function getMarketBets(marketId: number) {
     prisma.bet.findMany({ where: { marketId }, orderBy: [{ id: 'desc' }], take: 1000 }),
     marketSourceInfo(market),
   ]);
-  const outcomes = presentMarketOutcomes(storedOutcomes, source);
+  const outcomes = await poolOutcomes(market, presentMarketOutcomes(storedOutcomes, source));
 
   const users = await prisma.user.findMany({
     where: { id: { in: bets.map((b) => b.userId) } },
@@ -801,13 +859,16 @@ export async function getMarketBets(marketId: number) {
   const userMap = new Map(users.map((user) => [user.id, user]));
   const outcomeLabelMap = new Map(outcomes.map((o) => [o.id, o.label]));
 
-  const totalPool = bets.reduce((sum, b) => sum + b.stake, 0);
+  const pooled = market.pricingMode === POOL_PRICING;
+  const outcomeOdds = new Map(outcomes.map((o) => [o.id, o.odds]));
+  const locked = market.status === 'CLOSED' || market.status === 'SETTLED';
   const outcomeStats = outcomes.map((o) => {
     const outcomeBets = bets.filter((b) => b.outcomeId === o.id);
     return {
       ...o,
-      totalStake: outcomeBets.reduce((sum, b) => sum + b.stake, 0),
-      betCount: outcomeBets.length,
+      totalStake:
+        'poolStake' in o ? Number(o.poolStake) : outcomeBets.reduce((sum, b) => sum + b.stake, 0),
+      betCount: 'poolBetCount' in o ? Number(o.poolBetCount) : outcomeBets.length,
     };
   });
 
@@ -820,7 +881,9 @@ export async function getMarketBets(marketId: number) {
     outcomeLabel: outcomeLabelMap.get(b.outcomeId) ?? '',
     stake: b.stake,
     odds_at_bet: Number(b.oddsAtBet.toFixed(2)),
-    potential_payout: b.potentialPayout,
+    final_odds:
+      pooled && locked && b.status !== 'REFUNDED' ? (outcomeOdds.get(b.outcomeId) ?? null) : null,
+    potential_payout: pooled && !locked ? null : b.potentialPayout,
     status: b.status,
     settled_payout: b.settledPayout,
     createdAt: b.createdAt.toISOString(),
@@ -828,14 +891,15 @@ export async function getMarketBets(marketId: number) {
 
   return {
     market: { ...market, source },
-    totalPool,
-    totalBets: bets.length,
+    totalPool: outcomeStats.reduce((sum, outcome) => sum + outcome.totalStake, 0),
+    totalBets: outcomeStats.reduce((sum, outcome) => sum + outcome.betCount, 0),
     outcomes: outcomeStats,
     bets: detail,
   };
 }
 
 export async function myBets(userId: number, page = 0, pageSize = 20) {
+  await closeExpiredMarkets();
   const [bets, total] = await Promise.all([
     prisma.bet.findMany({
       where: { userId },
@@ -853,6 +917,17 @@ export async function myBets(userId: number, page = 0, pageSize = 20) {
     items.push({
       ...bet,
       odds_at_bet: Number(bet.oddsAtBet.toFixed(2)),
+      potential_payout:
+        market?.pricingMode === POOL_PRICING && market.status === 'OPEN'
+          ? null
+          : bet.potentialPayout,
+      settled_payout: bet.settledPayout,
+      final_odds:
+        market?.pricingMode === POOL_PRICING &&
+        market.status !== 'OPEN' &&
+        bet.status !== 'REFUNDED'
+          ? (outcome?.odds ?? null)
+          : null,
       market: market ? { ...market, source } : null,
       outcome: outcome && source ? presentMarketOutcomes([outcome], source)[0] : outcome,
     });

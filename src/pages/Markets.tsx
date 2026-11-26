@@ -82,8 +82,7 @@ function BetsDrawer({ marketId, onClose }: { marketId: number | null; onClose: (
       {query.data && (
         <>
           <p className="muted">
-            {query.data.market.source.pair || ''} · 每 10 秒刷新；接口最多返回最近 1,000
-            笔，以下统计以返回记录为准。
+            {query.data.market.source.pair || ''} · 每 10 秒刷新。明细最多显示最近 1,000 笔。
           </p>
           <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
             <Col xs={24} sm={12}>
@@ -104,7 +103,13 @@ function BetsDrawer({ marketId, onClose }: { marketId: number | null; onClose: (
                   <Space wrap>
                     <span>{outcome.betCount} 注</span>
                     <span>{outcome.totalStake} 冠军币</span>
-                    <span>当前赔率 {outcome.odds.toFixed(2)}</span>
+                    <span>
+                      {query.data?.market.pricingMode === 'POOL' &&
+                      (query.data.market.status === 'VOID' || outcome.poolReady === false)
+                        ? '当前奖池未达到结算条件'
+                        : (query.data?.market.status === 'OPEN' ? '当前赔率 ' : '封盘赔率 ') +
+                          outcome.odds.toFixed(2)}
+                    </span>
                   </Space>
                 </Card>
               </Col>
@@ -139,11 +144,17 @@ function BetsDrawer({ marketId, onClose }: { marketId: number | null; onClose: (
           { title: '下注选项', dataIndex: 'outcomeLabel' },
           { title: '下注金额', dataIndex: 'stake' },
           {
-            title: '下注赔率',
-            dataIndex: 'odds_at_bet',
-            render: (value: number) => value.toFixed(2),
+            title: query.data?.market.pricingMode === 'POOL' ? '封盘赔率' : '下注赔率',
+            render: (_, bet) =>
+              query.data?.market.pricingMode === 'POOL'
+                ? (bet.final_odds?.toFixed(2) ?? '—')
+                : bet.odds_at_bet.toFixed(2),
           },
-          { title: '预计返还', dataIndex: 'potential_payout' },
+          {
+            title: '猜中返还',
+            dataIndex: 'potential_payout',
+            render: (value: number | null) => value ?? '—',
+          },
           { title: '实际返还', dataIndex: 'settled_payout' },
           {
             title: '状态',
@@ -231,12 +242,12 @@ export default function Markets() {
       const body = openMarketBody(kind, selected, pair, round);
       chooseAction({
         kind: 'open',
-        title: '确认开盘 / 更新赔率？',
+        title: '确认开盘？',
         source: `${selected!.name}${selectedPair ? ` · ${selectedPair.label}` : ''} · ${round ? `第 ${round} 局` : '大场'}`,
         path: '/api/admin/markets/open',
         body,
         description:
-          '将按出场费用生成赔率。新盘口开放 15 分钟；更新仍在开放的盘口不会延长截止时间，已下注订单保留原下注赔率。',
+          '新盘口开放 15 分钟，赔率按双方下注金额浮动并在封盘时锁定。不满足最低双边奖池金额或赔率超出上限时，作废并返还本金。',
       });
     } catch (error) {
       void message.warning((error as Error).message);
@@ -275,9 +286,13 @@ export default function Markets() {
             : '确认作废并退还本金？',
       description:
         next === 'settle'
-          ? '结算会按下注时的赔率处理冠军币返还，完成后不能重新开盘。请核对胜方和局次。'
+          ? market.pricingMode === 'POOL'
+            ? '按封盘赔率结算。若尚未封盘，将先锁定奖池。请核对胜方和局次。'
+            : '该固定赔率盘口按下注时的赔率结算。请核对胜方和局次。'
           : next === 'close'
-            ? '封盘后不再接受新投注，已有订单保留，等待结算或作废。'
+            ? market.pricingMode === 'POOL'
+              ? '封盘将锁定赔率。若双边金额不足或赔率超出上限，盘口作废并退回本金。'
+              : '封盘后不再接受新投注，已有订单保留，等待结算或作废。'
             : '该盘口将停止使用，未结算的投注本金由业务服务退回，完成后不能重新开盘。',
       ...(outcome ? { body: { winnerKey: outcome.outcomeKey } } : {}),
     });
@@ -293,12 +308,12 @@ export default function Markets() {
   return (
     <>
       <Modal
-        title="开盘与赔率"
+        title="开盘"
         open={openDialog && action?.kind !== 'open' && can(viewer, 'markets.open')}
         width={760}
         onCancel={() => setOpenDialog(false)}
         cancelText="取消"
-        okText="开盘 / 更新赔率"
+        okText="开盘"
         onOk={prepareOpen}
         okButtonProps={{
           disabled: busy || !selected || query.isError || (kind === 'REGULAR' && !selectedPair),
@@ -396,8 +411,8 @@ export default function Markets() {
           常规赛支持指定对阵及 BO 小场；战队赛仅支持大场。
         </Typography.Text>
         <p className="market-help">
-          赔率按出场费用自动生成。开盘 15
-          分钟后截止，后台录入比分或单局战绩后由现有业务服务自动结算；未进行的小场及平局大场退还本金。
+          新盘口赔率随双方下注金额变动。开盘 15
+          分钟后截止，封盘时双边金额不足或赔率超出上限则退回本金。
         </p>
       </Modal>
       <div className="table-page">
@@ -505,7 +520,17 @@ export default function Markets() {
                     market.status === 'OPEN' && new Date(market.bettingCloseAt).getTime() <= now
                       ? { color: 'orange', label: '已截止' }
                       : marketStates[market.status];
-                  return <Tag color={state?.color}>{state?.label || market.status}</Tag>;
+                  return (
+                    <Tag color={state?.color}>
+                      {market.voidReason === 'NO_OPPOSITION'
+                        ? '未形成双边下注'
+                        : market.voidReason === 'INSUFFICIENT_POOL'
+                          ? '双边金额不足'
+                          : market.voidReason === 'ODDS_LIMIT'
+                            ? '赔率超出上限'
+                            : state?.label || market.status}
+                    </Tag>
+                  );
                 },
               },
               { title: '截止时间', dataIndex: 'bettingCloseAt', width: 185, render: dateText },
@@ -516,7 +541,16 @@ export default function Markets() {
                   <Space orientation="vertical">
                     {market.outcomes.map((outcome) => (
                       <span key={outcome.id}>
-                        {outcome.label} <strong>{outcome.odds.toFixed(2)}</strong>
+                        {outcome.label}{' '}
+                        <strong>
+                          {market.pricingMode === 'POOL' &&
+                          (market.status === 'VOID' || outcome.poolReady === false)
+                            ? '—'
+                            : outcome.odds.toFixed(2)}
+                        </strong>
+                        {market.pricingMode === 'POOL' && (
+                          <small> · {outcome.poolStake ?? 0} 币</small>
+                        )}
                       </span>
                     ))}
                   </Space>
@@ -543,7 +577,7 @@ export default function Markets() {
                               封盘
                             </Button>
                           </Permit>
-                        ) : (
+                        ) : market.pricingMode !== 'POOL' ? (
                           <Permit permission="markets.open">
                             <Button
                               size="small"
@@ -553,7 +587,7 @@ export default function Markets() {
                               重新开盘
                             </Button>
                           </Permit>
-                        )}
+                        ) : null}
                         {market.outcomes.map((outcome) => (
                           <Permit permission="markets.settle" key={outcome.id}>
                             <Button

@@ -809,6 +809,8 @@ model SignupBonusClaim {
 model MatchMarket {
   id             Int          @id @default(autoincrement())
   marketKind     String       @default("MATCH_WIN")
+  pricingMode    String       @default("FIXED")
+  voidReason     String?
   /// 常规赛 Match.id（常规赛盘口）。
   matchId        Int?
   /// 战队赛 TeamSeasonMatch.id（战队赛盘口）。
@@ -854,7 +856,7 @@ model MarketOutcome {
   @@index([marketId])
 }
 
-/// 投注单：oddsAtBet 为下单时快照赔率，结算按它派彩。
+/// 固定盘在下注时记录赔率及派彩。奖池盘在封盘时写入派彩。
 model Bet {
   id              Int       @id @default(autoincrement())
   userId          Int

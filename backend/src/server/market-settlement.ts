@@ -1,13 +1,71 @@
-import type { Prisma } from '@prisma/client';
+import type { MatchMarket, Prisma } from '@prisma/client';
 import { badRequest, notFound } from '@/server/api';
 import { creditLedger } from '@/server/points';
 import { marketRoundLabel } from '@/lib/admin-options';
+import { POOL_PRICING, poolQuote, poolVoidLabel, poolVoidReason } from '@/lib/pool-odds';
 export type OutcomeKey = 'TEAM_ONE_WIN' | 'TEAM_TWO_WIN';
 const OUTCOME_KEYS: OutcomeKey[] = ['TEAM_ONE_WIN', 'TEAM_TWO_WIN'];
 
 /** Serialize bets, settlement and refunds on the same market. */
 export async function lockMarket(tx: Prisma.TransactionClient, marketId: number) {
   await tx.$queryRaw`SELECT "id" FROM "MatchMarket" WHERE "id" = ${marketId} FOR UPDATE`;
+}
+
+export async function closeMarketInTransaction(
+  tx: Prisma.TransactionClient,
+  marketId: number,
+  expiredAt?: Date,
+  lockedMarket?: MatchMarket,
+) {
+  if (!lockedMarket) await lockMarket(tx, marketId);
+  const market = lockedMarket ?? (await tx.matchMarket.findUnique({ where: { id: marketId } }));
+  if (!market || market.status !== 'OPEN' || (expiredAt && market.bettingCloseAt > expiredAt))
+    return { closed: false, refunded: 0, voided: false };
+
+  if (market.pricingMode === POOL_PRICING) {
+    const outcomes = await tx.marketOutcome.findMany({ where: { marketId } });
+    const sums = await tx.bet.groupBy({
+      by: ['outcomeId'],
+      where: { marketId, status: 'OPEN' },
+      _sum: { stake: true },
+    });
+    const stakes = new Map(sums.map((row) => [row.outcomeId, row._sum.stake ?? 0]));
+    if (
+      outcomes.length !== 2 ||
+      outcomes.some(
+        (outcome) =>
+          !outcome.outcomeKey || !OUTCOME_KEYS.includes(outcome.outcomeKey as OutcomeKey),
+      )
+    )
+      throw badRequest('盘口胜负选项不完整');
+    const [one, two] = outcomes.map((outcome) => stakes.get(outcome.id) ?? 0);
+    const reason = poolVoidReason(one, two, market.returnRate);
+    if (reason) {
+      const result = await voidMarketInTransaction(tx, marketId, reason);
+      return { closed: true, ...result, voided: true };
+    }
+    const total = one + two;
+    for (const outcome of outcomes) {
+      const own = stakes.get(outcome.id)!;
+      const { odds, numerator, denominator } = poolQuote(own, total - own, market.returnRate);
+      await tx.marketOutcome.update({
+        where: { id: outcome.id },
+        data: { odds, prob: own / total },
+      });
+      // Round down before crediting whole coins so total payouts stay within the pool.
+      await tx.$executeRaw`
+        UPDATE "Bet"
+        SET "potentialPayout" = LEAST(2147483647, div(stake::numeric * ${numerator}::numeric, ${denominator}::numeric))::integer
+        WHERE "marketId" = ${marketId} AND "outcomeId" = ${outcome.id} AND status = 'OPEN'
+      `;
+    }
+  }
+
+  await tx.matchMarket.update({
+    where: { id: marketId },
+    data: { status: 'CLOSED', bettingCloseAt: expiredAt ? market.bettingCloseAt : new Date() },
+  });
+  return { closed: true, refunded: 0, voided: false };
 }
 
 export async function settleMarketInTransaction(
@@ -21,7 +79,15 @@ export async function settleMarketInTransaction(
   const market = await tx.matchMarket.findUnique({ where: { id: marketId } });
   if (!market) throw notFound('盘口不存在');
   if (market.status === 'SETTLED') return { settled: 0, already_settled: true };
-  if (market.status === 'VOID') throw badRequest('盘口已作废，不能结算');
+  if (market.status === 'VOID') {
+    if (market.pricingMode === POOL_PRICING) return { settled: 0, voided: true };
+    throw badRequest('盘口已作废，不能结算');
+  }
+
+  if (market.pricingMode === POOL_PRICING && market.status === 'OPEN') {
+    const result = await closeMarketInTransaction(tx, marketId, undefined, market);
+    if (result.voided) return { settled: 0, refunded: result.refunded, voided: true };
+  }
 
   const outcomes = await tx.marketOutcome.findMany({ where: { marketId } });
   const winner = outcomes.find((o) => o.outcomeKey === winnerKey);
@@ -109,7 +175,11 @@ export async function settleMarketInTransaction(
   return { settled: bets.length, total_stake: totalStake, total_payout: totalPayout, pnl };
 }
 
-export async function voidMarketInTransaction(tx: Prisma.TransactionClient, marketId: number) {
+export async function voidMarketInTransaction(
+  tx: Prisma.TransactionClient,
+  marketId: number,
+  reason?: string,
+) {
   await lockMarket(tx, marketId);
   const market = await tx.matchMarket.findUnique({ where: { id: marketId } });
   if (!market) throw notFound('盘口不存在');
@@ -137,8 +207,30 @@ export async function voidMarketInTransaction(tx: Prisma.TransactionClient, mark
   }
   await tx.matchMarket.update({
     where: { id: marketId },
-    data: { status: 'VOID', settledAt },
+    data: {
+      status: 'VOID',
+      settledAt,
+      ...(reason
+        ? {
+            voidReason: reason,
+            bettingCloseAt: new Date(
+              Math.min(market.bettingCloseAt.getTime(), settledAt.getTime()),
+            ),
+          }
+        : {}),
+    },
   });
+  const reasonLabel = poolVoidLabel(reason);
+  if (reasonLabel && bets.length) {
+    await tx.userNotification.createMany({
+      data: bets.map((bet) => ({
+        userId: bet.userId,
+        type: 'BET_RESULT',
+        title: '竞猜本金已退回',
+        content: `本场竞猜封盘时「${reasonLabel}」，已退回 ${bet.stake} 冠军币。`,
+      })),
+    });
+  }
   return { refunded: bets.length };
 }
 
@@ -248,11 +340,7 @@ export async function settleMarketsForRegularScore(
           market.id,
           gameTeam === market.teamOneId ? 'TEAM_ONE_WIN' : 'TEAM_TWO_WIN',
         );
-      else
-        await tx.matchMarket.updateMany({
-          where: { id: market.id, status: 'OPEN' },
-          data: { status: 'CLOSED', bettingCloseAt: new Date() },
-        });
+      else await closeMarketInTransaction(tx, market.id);
     }
   }
 }
