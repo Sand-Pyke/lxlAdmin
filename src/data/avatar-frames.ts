@@ -107,6 +107,21 @@ export const AVATAR_FRAMES = [
   },
 ] as const;
 
+export const SHOP_AVATAR_FRAME_PRESETS = [
+  ['ion-throne', '离子王座'],
+  ['ember-wings', '烬羽天翼'],
+  ['void-tides', '虚空潮汐'],
+  ['frost-comet', '霜魄彗星'],
+  ['chrome-hex', '铬银战阵'],
+  ['jade-dragonstorm', '苍龙风暴'],
+].map(([id, name]) => ({
+  value: `template:${id}`,
+  label: `${name} · 动态`,
+  name: `头像框·${name}`,
+  filename: `${id}.svg`,
+  image: `/avatar-frame-presets/${id}.svg`,
+}));
+
 export function findAvatarFrame(value: string) {
   return AVATAR_FRAMES.find((frame) => frame.value === value);
 }

@@ -28,7 +28,7 @@ import {
 } from '../api/shop';
 import type { ShopForm } from '../api/shop';
 import type { ShopItem } from '../api/types';
-import { AVATAR_FRAMES, findAvatarFrame } from '../data/avatar-frames';
+import { AVATAR_FRAMES, SHOP_AVATAR_FRAME_PRESETS, findAvatarFrame } from '../data/avatar-frames';
 import { NAMEPLATE_STYLES, SHOP_NAMEPLATE_PRESETS, nameplateImage } from '../data/nameplates';
 import { DYNAMIC_BACKGROUNDS } from '../data/dynamic-backgrounds';
 import '../styles/shop.css';
@@ -74,14 +74,19 @@ export default function ShopEditor({ item, onClose }: { item?: ShopItem; onClose
   const save = useMutation({
     mutationFn: async (values: ShopForm) => {
       const body = shopPayload(values, item);
-      const template = SHOP_NAMEPLATE_PRESETS.find((plate) => plate.value === body.effectValue);
-      if (category === 'NAMEPLATE' && template) {
+      const template =
+        category === 'AVATAR_FRAME'
+          ? SHOP_AVATAR_FRAME_PRESETS.find((preset) => preset.value === body.avatarFrameStyle)
+          : category === 'NAMEPLATE'
+            ? SHOP_NAMEPLATE_PRESETS.find((preset) => preset.value === body.effectValue)
+            : undefined;
+      if (template) {
         if (!canUpload) throw new Error('当前账号没有图片上传权限');
         let url = publishedTemplates.current.get(template.value);
         if (!url) {
           const asset = await fetch(template.image, { signal: AbortSignal.timeout(10_000) });
           if (!asset.ok || !asset.headers.get('content-type')?.includes('image/svg+xml'))
-            throw new Error('动态铭牌素材暂不可用，请刷新后重试');
+            throw new Error('动态模板素材暂不可用，请刷新后重试');
           const image = new File([await asset.blob()], template.filename, {
             type: 'image/svg+xml',
           });
@@ -89,7 +94,8 @@ export default function ShopEditor({ item, onClose }: { item?: ShopItem; onClose
           publishedTemplates.current.set(template.value, url);
         }
         body.icon = url;
-        body.effectValue = 'custom';
+        if (category === 'AVATAR_FRAME') body.avatarFrameStyle = '';
+        else body.effectValue = 'custom';
       }
       return post(item ? `/api/admin/shop/${item.id}` : '/api/admin/shop/create', body);
     },
@@ -100,6 +106,7 @@ export default function ShopEditor({ item, onClose }: { item?: ShopItem; onClose
     },
   });
   const busy = save.isPending || upload.isPending;
+  const frameTemplate = SHOP_AVATAR_FRAME_PRESETS.find((preset) => preset.value === frame);
   const customImage =
     category === 'BACKGROUND'
       ? !dynamic
@@ -110,7 +117,7 @@ export default function ShopEditor({ item, onClose }: { item?: ShopItem; onClose
           : true;
   const preview =
     category === 'AVATAR_FRAME' && frame
-      ? findAvatarFrame(frame)?.image
+      ? frameTemplate?.image || findAvatarFrame(frame)?.image
       : category === 'NAMEPLATE' && effect !== 'custom'
         ? SHOP_NAMEPLATE_PRESETS.find((plate) => plate.value === effect)?.image ||
           nameplateImage(effect || 'champion')
@@ -200,10 +207,16 @@ export default function ShopEditor({ item, onClose }: { item?: ShopItem; onClose
               optionFilterProp="label"
               options={[
                 ...AVATAR_FRAMES.map((frame) => ({ value: frame.value, label: frame.label })),
+                ...(canUpload
+                  ? [{ label: '外圈特效 · 动态模板', options: SHOP_AVATAR_FRAME_PRESETS }]
+                  : []),
                 { value: '', label: '自定义图片' },
               ]}
               onChange={(value) => {
                 upload.reset();
+                const template = SHOP_AVATAR_FRAME_PRESETS.find((preset) => preset.value === value);
+                if (template && !form.getFieldValue('name')?.trim())
+                  form.setFieldValue('name', template.name);
                 form.setFieldValue('icon', findAvatarFrame(value)?.image || '');
               }}
             />
@@ -331,7 +344,12 @@ export default function ShopEditor({ item, onClose }: { item?: ShopItem; onClose
           className={`shop-preview ${category === 'NAMEPLATE' ? 'shop-preview-wide' : ''}`}
           aria-label="商品预览"
         >
-          {preview ? (
+          {category === 'AVATAR_FRAME' && frameTemplate ? (
+            <div className="shop-preview-avatar-frame">
+              <span aria-hidden="true">LXL</span>
+              <img src={frameTemplate.image} alt="商品图片预览" />
+            </div>
+          ) : preview ? (
             <img src={preview} alt="商品图片预览" />
           ) : category === 'AVATAR_FRAME' && frame === 'gold' ? (
             <div className="shop-gold-frame">LXL</div>

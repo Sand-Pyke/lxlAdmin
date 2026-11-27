@@ -26,6 +26,33 @@ test.beforeEach(async ({ request }) => {
   await request.get('/api/__test/reset');
 });
 
+test('an outer-effect avatar frame previews and saves as a shared image', async ({
+  page,
+  request,
+}) => {
+  await login(page);
+  await page.getByRole('button', { name: '新建商品', exact: true }).click();
+  await select(page, '头像框样式', '离子王座 · 动态');
+  const dialog = page.getByRole('dialog');
+  const image = dialog.getByAltText('商品图片预览');
+  await expect(image).toHaveAttribute('src', '/avatar-frame-presets/ion-throne.svg');
+  await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(512);
+  await dialog.getByLabel('价格（冠军币）', { exact: true }).fill('1999');
+  await dialog.getByRole('button', { name: '保存商品', exact: true }).click();
+  await expect(page.getByRole('row').filter({ hasText: '头像框·离子王座' })).toBeVisible();
+  const calls = await (await request.get('/api/__test/calls')).json();
+  expect(
+    calls.find((call: { path: string }) => call.path === '/api/admin/shop/upload-icon').body.file,
+  ).toMatchObject({ name: 'ion-throne.svg', type: 'image/svg+xml' });
+  expect(
+    calls.find((call: { path: string }) => call.path === '/api/admin/shop/create').body,
+  ).toMatchObject({
+    category: 'AVATAR_FRAME',
+    avatarFrameStyle: '',
+    icon: '/assets/shop-icons/fixture-icon.png',
+  });
+});
+
 test('a dynamic nameplate template previews and publishes through the shared shop upload', async ({
   page,
   request,

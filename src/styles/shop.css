@@ -19,6 +19,27 @@
   max-width: 560px;
   max-height: 100px;
 }
+.shop-preview-avatar-frame {
+  position: relative;
+  display: grid;
+  width: 150px;
+  aspect-ratio: 1;
+  place-items: center;
+}
+.shop-preview-avatar-frame span {
+  display: grid;
+  width: 71%;
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 24%, #43546a, #161f31 72%);
+  color: #f8fafc;
+  font-weight: 700;
+}
+.shop-preview-avatar-frame img {
+  position: absolute;
+  inset: 0;
+}
 .shop-gold-frame {
   border: 5px solid #c5a14b;
   box-shadow: 0 0 0 3px #eee2b5;

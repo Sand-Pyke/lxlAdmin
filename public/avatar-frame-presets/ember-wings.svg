@@ -1,0 +1,28 @@
+<svg id="still" xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="tone" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffe597"/><stop offset=".38" stop-color="#ff6436"/><stop offset="1" stop-color="#ec294f"/></linearGradient>
+    <clipPath id="outside"><path clip-rule="evenodd" d="M0 0h512v512H0ZM256 74a182 182 0 1 1 0 364 182 182 0 1 1 0-364Z"/></clipPath>
+  </defs>
+  <style>
+    .orbit{transform-origin:256px 256px;animation:orbit 22s linear infinite}
+    .glow{animation:glow 4s ease-in-out infinite}
+    .trace{animation:trace 7s linear infinite}
+    @keyframes orbit{to{transform:rotate(360deg)}}
+    @keyframes glow{0%,100%{opacity:.54}50%{opacity:.96}}
+    @keyframes trace{to{stroke-dashoffset:-338}}
+    :root:target *{animation:none!important}
+    @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+  </style>
+  <circle cx="256" cy="256" r="198" fill="none" stroke="#ec294f" stroke-width="25" opacity=".55"/>
+  <circle cx="256" cy="256" r="191" fill="none" stroke="#10182a" stroke-width="16"/>
+  <circle cx="256" cy="256" r="190" fill="none" stroke="url(#tone)" stroke-width="9"/>
+  <circle cx="256" cy="256" r="184.5" fill="none" stroke="#ffe597" stroke-width="2" opacity=".8"/>
+  <g clip-path="url(#outside)">
+    <circle class="trace" cx="256" cy="256" r="204" fill="none" stroke="#ffe597" stroke-width="3" stroke-linecap="round" stroke-dasharray="98 210 6 24"/>
+    <g fill="url(#tone)" class="glow">
+      <path d="M194 91C108 63 53 125 28 195c68-41 92-38 116-49C90 168 54 218 30 275c71-64 99-53 115-74-22 39-37 70-83 117 48-15 76-32 101-60Z"/>
+      <path d="M318 91c86-28 141 34 166 104-68-41-92-38-116-49 54 22 90 72 114 129-71-64-99-53-115-74 22 39 37 70 83 117-48-15-76-32-101-60Z"/>
+    </g><circle class="orbit" cx="256" cy="256" r="222" fill="none" stroke="#ffc281" stroke-width="4" stroke-dasharray="8 24 3 30"/>
+    <path d="m256 440 12 23-12 33-12-33Z" fill="#ffda8b"/>
+  </g>
+</svg>

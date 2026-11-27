@@ -1,0 +1,29 @@
+<svg id="still" xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="tone" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ded3ff"/><stop offset=".38" stop-color="#9259ff"/><stop offset="1" stop-color="#ff52e0"/></linearGradient>
+    <clipPath id="outside"><path clip-rule="evenodd" d="M0 0h512v512H0ZM256 74a182 182 0 1 1 0 364 182 182 0 1 1 0-364Z"/></clipPath>
+  </defs>
+  <style>
+    .orbit{transform-origin:256px 256px;animation:orbit 16s linear infinite}
+    .glow{animation:glow 4s ease-in-out infinite}
+    .trace{animation:trace 7s linear infinite}
+    @keyframes orbit{to{transform:rotate(360deg)}}
+    @keyframes glow{0%,100%{opacity:.54}50%{opacity:.96}}
+    @keyframes trace{to{stroke-dashoffset:-338}}
+    :root:target *{animation:none!important}
+    @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+  </style>
+  <circle cx="256" cy="256" r="198" fill="none" stroke="#ff52e0" stroke-width="25" opacity=".55"/>
+  <circle cx="256" cy="256" r="191" fill="none" stroke="#10182a" stroke-width="16"/>
+  <circle cx="256" cy="256" r="190" fill="none" stroke="url(#tone)" stroke-width="9"/>
+  <circle cx="256" cy="256" r="184.5" fill="none" stroke="#ded3ff" stroke-width="2" opacity=".8"/>
+  <g clip-path="url(#outside)">
+    <circle class="trace" cx="256" cy="256" r="204" fill="none" stroke="#ded3ff" stroke-width="3" stroke-linecap="round" stroke-dasharray="98 210 6 24"/>
+    <g class="orbit" fill="none">
+      <ellipse cx="256" cy="256" rx="242" ry="219" stroke="#8a54ed" stroke-width="3"/>
+      <ellipse cx="256" cy="256" rx="239" ry="214" stroke="url(#tone)" stroke-width="7" stroke-dasharray="74 245 5 130"/>
+      <circle cx="42" cy="256" r="10" fill="#b685ff"/><circle cx="478" cy="270" r="7" fill="#ffb8ea"/>
+      <path d="m290 17 6 13 13 5-13 5-6 13-5-13-13-5 13-5Zm-73 444 5 11 11 5-11 4-5 11-4-11-11-4 11-5Z" fill="#f2dcff"/>
+    </g><circle cx="256" cy="256" r="228" fill="none" stroke="#ad72ec" opacity=".4" stroke-dasharray="3 12"/>
+  </g>
+</svg>
