@@ -95,6 +95,8 @@ export default function MatchManage() {
   const [liveOpen, setLiveOpen] = useState(false);
   const [liveValue, setLiveValue] = useState('');
   const [editOpen, setEditOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [signupPassword, setSignupPassword] = useState('');
   const [editForm] = Form.useForm<
     MatchFormatValues & { name: string; round: string; captain_position: string; date: string }
   >();
@@ -142,6 +144,22 @@ export default function MatchManage() {
     },
     onError: (error) => void message.error(error.message),
   });
+
+  function saveSignupPassword(value: string | null) {
+    run.mutate(
+      {
+        url: `/api/admin/match/update/${matchId}`,
+        body: { signup_password: value },
+        fallback: value === null ? '已开放报名' : '已设置报名密码',
+      },
+      {
+        onSuccess: () => {
+          setPasswordOpen(false);
+          setSignupPassword('');
+        },
+      },
+    );
+  }
 
   const saveScores = useMutation({
     mutationFn: (input: {
@@ -290,6 +308,11 @@ export default function MatchManage() {
                       {board.match.allow_item_cards === false ? '禁用道具卡' : '允许道具卡'}
                     </Tag>
                     {board.match.min_signup_rank && <Tag>{board.match.min_signup_rank}及以上</Tag>}
+                    {board.match.status === 'CREATED' && (
+                      <Tag color={board.match.signup_password_required ? 'gold' : undefined}>
+                        {board.match.signup_password_required ? '密码报名' : '公开报名'}
+                      </Tag>
+                    )}
                   </>
                 )}
                 <Switch
@@ -322,6 +345,17 @@ export default function MatchManage() {
                 >
                   编辑赛事
                 </Button>
+                {board.match.bo === CUSTOM_FORMAT && board.match.status === 'CREATED' && (
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setSignupPassword('');
+                      setPasswordOpen(true);
+                    }}
+                  >
+                    报名密码
+                  </Button>
+                )}
                 <Button
                   size="small"
                   disabled={statusGate(board.match.status !== 'CREATED')}
@@ -588,6 +622,50 @@ export default function MatchManage() {
                 <Input type="datetime-local" />
               </Form.Item>
             </Form>
+          </Modal>
+
+          <Modal
+            title="报名密码"
+            open={passwordOpen}
+            onCancel={() => {
+              setPasswordOpen(false);
+              setSignupPassword('');
+            }}
+            footer={[
+              board.match.signup_password_required && (
+                <Button
+                  key="open"
+                  disabled={run.isPending}
+                  onClick={() => saveSignupPassword(null)}
+                >
+                  关闭密码并开放报名
+                </Button>
+              ),
+              <Button
+                key="save"
+                type="primary"
+                loading={run.isPending}
+                disabled={!signupPassword.trim()}
+                onClick={() => saveSignupPassword(signupPassword)}
+              >
+                保存密码
+              </Button>,
+            ]}
+          >
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <Typography.Text>
+                {board.match.signup_password_required
+                  ? '报名密码已开启。可以设置新密码，或直接开放报名。'
+                  : '设置密码后，只有输入正确密码的选手才能报名。'}
+              </Typography.Text>
+              <Input.Password
+                aria-label="新报名密码"
+                value={signupPassword}
+                onChange={(event) => setSignupPassword(event.target.value)}
+                autoComplete="new-password"
+                placeholder="输入新报名密码"
+              />
+            </Space>
           </Modal>
 
           <Modal

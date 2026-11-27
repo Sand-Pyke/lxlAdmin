@@ -278,6 +278,20 @@ try {
   assert.equal(editedMatch.date.toISOString(), '2026-11-26T11:30:00.000Z');
   assert.deepEqual(editedMatch.roundFormats, customBody.round_formats);
   const { id: customId } = await post('/api/admin/match/create', cookies.admin, customBody);
+  const passwordRoute = `/api/admin/match/update/${customId}`;
+  await post(passwordRoute, cookies.admin, { signup_password: 'fixture-invite' });
+  const protectedMatch = await db.match.findUniqueOrThrow({ where: { id: customId } });
+  assert.ok(await bcrypt.compare('fixture-invite', protectedMatch.signupPasswordHash));
+  const protectedBoard = await (
+    await call(`/api/admin/teams/${customId}`, { cookie: cookies.admin })
+  ).json();
+  assert.equal(protectedBoard.match.signup_password_required, true);
+  assert.ok(!JSON.stringify(protectedBoard).includes(protectedMatch.signupPasswordHash));
+  await post(passwordRoute, cookies.admin, { signup_password: null });
+  assert.equal(
+    (await db.match.findUniqueOrThrow({ where: { id: customId } })).signupPasswordHash,
+    null,
+  );
   const customFormatRoute = `/api/admin/match/set_bo/${customId}`;
   await post(customFormatRoute, cookies.admin, { ...customBody, custom_team_count: 8 });
   assert.equal((await db.match.findUnique({ where: { id: customId } })).customTeamCount, 8);

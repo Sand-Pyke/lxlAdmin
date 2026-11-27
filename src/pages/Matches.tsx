@@ -226,7 +226,7 @@ export default function Matches() {
           >
             <Input placeholder="例如：LXL 周末常规赛" maxLength={100} />
           </Form.Item>
-          <MatchFormatFields form={form} />
+          <MatchFormatFields form={form} showSignupPassword />
           <Form.Item name="round" label="赛事轮次" rules={[{ required: true, whitespace: true }]}>
             <Input maxLength={40} />
           </Form.Item>

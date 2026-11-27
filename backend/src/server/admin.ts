@@ -94,11 +94,22 @@ function matchFormatSettings(bo: string, body: Record<string, unknown>) {
   return { bo, customTeamCount, roundFormats, minSignupRank, allowItemCards };
 }
 
+async function parseSignupPassword(value: unknown) {
+  if (value === undefined || value === null) return value;
+  if (typeof value !== 'string' || !value.trim() || Buffer.byteLength(value, 'utf8') > 72)
+    throw badRequest('请输入有效的报名密码，最多 72 字节');
+  return bcrypt.hash(value, 10);
+}
+
 export async function createMatch(adminId: number, body: Record<string, unknown>) {
   const name = asText(body.name);
   if (!name) throw badRequest('比赛名称不能为空');
 
   const format = matchFormatSettings(asText(body.bo) || 'BO3', body);
+  const signupPasswordHash =
+    format.bo === CUSTOM_FORMAT && body.signup_password !== ''
+      ? await parseSignupPassword(body.signup_password)
+      : null;
   const round = asText(body.round) || '常规赛';
   const captainPosition = asText(body.captain_position);
   if (captainPosition && !isPosition(captainPosition)) throw badRequest('队长分路不合法');
@@ -114,6 +125,7 @@ export async function createMatch(adminId: number, body: Record<string, unknown>
       status: 'CREATED',
       ...format,
       allowItemCards: format.allowItemCards ?? true,
+      signupPasswordHash,
       round: round.slice(0, 40),
       useFee: body.use_fee === undefined ? true : Boolean(body.use_fee),
       captainPosition,
@@ -134,6 +146,7 @@ export async function updateMatch(
   if (body.status !== undefined)
     throw badRequest('赛事状态由“结束选人并开赛”和“结束本轮”自动更新，不能手动修改');
   const format = body.bo === undefined ? undefined : matchFormatSettings(asText(body.bo), body);
+  const signupPasswordHash = await parseSignupPassword(body.signup_password);
   const isCoreAdmin = actorId !== undefined && (await isCoreAdminActor(actorId));
   const removedTeamLogos: string[] = [];
   const suffix = await prisma.$transaction(async (tx) => {
@@ -142,6 +155,11 @@ export async function updateMatch(
     if (!match) throw notFound('赛事不存在');
     const started = match.status !== 'CREATED';
     const data: Prisma.MatchUpdateInput = {};
+    if (signupPasswordHash !== undefined) {
+      if (started || (format?.bo ?? match.bo) !== CUSTOM_FORMAT)
+        throw badRequest('只有待选人阶段的自定义赛事可以设置报名密码');
+      data.signupPasswordHash = signupPasswordHash;
+    }
     const name = asText(body.name).slice(0, 100);
     if (name && name !== match.name) {
       if (started && !isCoreAdmin) throw badRequest('比赛已开始，名称不可再修改');
@@ -298,7 +316,15 @@ async function updateMatchFormat(
     )
       throw badRequest('赛事已有比分或竞猜盘口，无法修改每轮赛制');
   }
-  await tx.match.update({ where: { id: matchId }, data: format });
+  await tx.match.update({
+    where: { id: matchId },
+    data: {
+      ...format,
+      ...(format.bo !== CUSTOM_FORMAT && match.signupPasswordHash
+        ? { signupPasswordHash: null }
+        : {}),
+    },
+  });
   return oldLimit !== newLimit ? rebalanceSignupWaitlist(matchId, tx) : { promoted: 0, demoted: 0 };
 }
 
@@ -651,6 +677,7 @@ export async function loadTeamsBoard(matchId: number) {
       round_formats: match.roundFormats,
       min_signup_rank: match.minSignupRank,
       allow_item_cards: match.allowItemCards,
+      signup_password_required: Boolean(match.signupPasswordHash),
       total_rounds: match.customTeamCount
         ? totalRoundsFor(match.customTeamCount)
         : isBracketTeamCount(teams.length)

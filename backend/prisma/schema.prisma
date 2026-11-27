@@ -172,6 +172,7 @@ model Match {
   roundFormats     String[]          @default([])
   minSignupRank    String            @default("")
   allowItemCards   Boolean           @default(true)
+  signupPasswordHash String?
   playerCount      Int               @default(0)
   teamCount        Int               @default(2)
   blueTeam         String            @default("蓝色方")

@@ -1,4 +1,4 @@
-import { Form, Select, Switch } from 'antd';
+import { Form, Input, Select, Switch } from 'antd';
 import type { FormInstance } from 'antd';
 import {
   BO_OPTIONS,
@@ -15,6 +15,7 @@ export type MatchFormatValues = {
   round_formats?: string[];
   min_signup_rank?: string;
   allow_item_cards?: boolean;
+  signup_password?: string;
 };
 
 export const defaultCustomFormat = {
@@ -28,10 +29,12 @@ export function MatchFormatFields({
   form,
   legacyFormat,
   allowCustom = true,
+  showSignupPassword = false,
 }: {
   form: FormInstance;
   legacyFormat?: string;
   allowCustom?: boolean;
+  showSignupPassword?: boolean;
 }) {
   const bo = Form.useWatch('bo', form);
   const teamCount = Form.useWatch('custom_team_count', form) ?? 4;
@@ -94,6 +97,11 @@ export function MatchFormatFields({
           <Form.Item name="allow_item_cards" label="允许使用道具卡" valuePropName="checked">
             <Switch />
           </Form.Item>
+          {showSignupPassword && (
+            <Form.Item name="signup_password" label="报名密码" preserve={false}>
+              <Input.Password placeholder="选填，留空为公开报名" autoComplete="new-password" />
+            </Form.Item>
+          )}
           <Form.Item name="min_signup_rank" label="最低报名段位">
             <Select
               virtual={false}

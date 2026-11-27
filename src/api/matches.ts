@@ -238,6 +238,7 @@ export type MatchBoard = {
     round_formats?: string[];
     min_signup_rank?: string;
     allow_item_cards?: boolean;
+    signup_password_required?: boolean;
     round: string;
     date: string | null;
     live_url: string | null;
