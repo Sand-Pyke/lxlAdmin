@@ -41,6 +41,26 @@ export const ANIMATED_NAMEPLATES = [
 
 export const NAMEPLATE_STYLES = [...NAMEPLATES, ...ANIMATED_NAMEPLATES] as const;
 
+// These templates are uploaded as shop images so existing user clients can render them.
+export const SHOP_NAMEPLATE_PRESETS = [
+  ['black-dragon', '黑曜龙息'],
+  ['volt-crown', '电弧王冠'],
+  ['obsidian-samurai', '烬夜鬼面'],
+  ['gravity-rift', '引力裂隙'],
+  ['glacier-javelin', '冰狱长锋'],
+  ['solar-forge', '熔日铸心'],
+  ['neon-overdrive', '霓城超频'],
+  ['jade-tempest', '苍玉风暴'],
+  ['chrome-sentinel', '银翼哨兵'],
+  ['violet-scythe', '虚刃残月'],
+].map(([id, name]) => ({
+  value: `template:${id}`,
+  label: `${name} · 动态`,
+  name: `铭牌·${name}`,
+  filename: `${id}.svg`,
+  image: `/nameplate-presets/${id}.svg`,
+}));
+
 export function isAnimatedNameplate(value: string) {
   return ANIMATED_NAMEPLATES.some((plate) => plate.value === value || plate.image === value);
 }

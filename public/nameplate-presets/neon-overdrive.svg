@@ -1,0 +1,27 @@
+<svg id="still" xmlns="http://www.w3.org/2000/svg" width="1000" height="160" viewBox="0 0 1000 160">
+  <defs>
+    <linearGradient id="bg"><stop stop-color="#080e1c"/><stop offset=".46" stop-color="#0d1423"/><stop offset="1" stop-color="#291336"/></linearGradient>
+    <radialGradient id="light" cx="84%" cy="49%" r="42%"><stop stop-color="#ff41c9" stop-opacity=".34"/><stop offset="1" stop-color="#ff41c9" stop-opacity="0"/></radialGradient>
+    <linearGradient id="metal" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#ff41c9"/><stop offset="1" stop-color="#a7faff"/></linearGradient>
+  </defs>
+  <style>
+    .flow{animation:trace 6s linear infinite}
+    .shade{fill:#ff41c9;opacity:.3;transform-box:fill-box;transform-origin:center;animation:drift 5s ease-in-out infinite}
+    @keyframes trace{to{stroke-dashoffset:-138}}
+    @keyframes drift{0%,100%{opacity:.24;transform:scale(1)}50%{opacity:.56;transform:translate(7px,-3px)}}
+    :root:target *{animation:none!important}
+    @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+  </style>
+  <path fill="url(#bg)" d="M0 0h1000v160H0Z"/>
+  <path fill="url(#light)" d="M425 0h575v160H425Z"/>
+  <path d="M468 1h171l13 7h81m-358 151h138l17-7h167m214 7h88" fill="none" stroke="url(#metal)" opacity=".46"/>
+
+  <path d="M545 160 694 69m-33 91 85-91m11 91 40-91m58 91-11-91m105 91-55-91M552 143h448m-421-18h421m-396-16h396m-371-15h371" stroke="#6c428e" opacity=".52"/>
+  <circle cx="863" cy="55" r="43" fill="#d9278c" opacity=".36"/>
+  <path d="M825 41h76m-81 10h86m-85 11h84m-81 10h78m-72 10h66" stroke="#ff80ce" opacity=".52"/>
+  <path d="m719 101 37-13 41-32h51l38 24 68 12 12 24-23 13H721l-20-13Z" fill="#151027" stroke="url(#metal)" stroke-width="2"/>
+  <path d="m764 89 38-26 43 1 32 25-54-7Z" fill="#503cac" stroke="#77f5ff"/>
+  <path d="m710 111 33-12-10 14Zm222-10 26 7 4 8-28-5Z" fill="#ccfbff"/>
+  <circle cx="756" cy="126" r="18" fill="#100b20" stroke="#cd52e1" stroke-width="2"/><circle cx="922" cy="126" r="18" fill="#100b20" stroke="#67f5ff" stroke-width="2"/>
+  <path class="flow" d="M509 119h184m-113 14h150m79 14h151m-374 9h403" stroke="#fa5cea" stroke-dasharray="44 73 4 19" fill="none"/>
+</svg>

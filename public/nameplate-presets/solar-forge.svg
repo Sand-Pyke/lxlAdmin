@@ -1,0 +1,30 @@
+<svg id="still" xmlns="http://www.w3.org/2000/svg" width="1000" height="160" viewBox="0 0 1000 160">
+  <defs>
+    <linearGradient id="bg"><stop stop-color="#080e1c"/><stop offset=".46" stop-color="#0d1423"/><stop offset="1" stop-color="#331a13"/></linearGradient>
+    <radialGradient id="light" cx="84%" cy="49%" r="42%"><stop stop-color="#ff852a" stop-opacity=".34"/><stop offset="1" stop-color="#ff852a" stop-opacity="0"/></radialGradient>
+    <linearGradient id="metal" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#ff852a"/><stop offset="1" stop-color="#fff29b"/></linearGradient>
+  </defs>
+  <style>
+    .flow{animation:trace 6s linear infinite}
+    .shade{fill:#ff852a;opacity:.3;transform-box:fill-box;transform-origin:center;animation:pulse 5s ease-in-out infinite}
+    @keyframes trace{to{stroke-dashoffset:-138}}
+    @keyframes pulse{0%,100%{opacity:.24;transform:scale(1)}50%{opacity:.56;transform:scale(1.105)}}
+    :root:target *{animation:none!important}
+    @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+  </style>
+  <path fill="url(#bg)" d="M0 0h1000v160H0Z"/>
+  <path fill="url(#light)" d="M425 0h575v160H425Z"/>
+  <path d="M468 1h171l13 7h81m-358 151h138l17-7h167m214 7h88" fill="none" stroke="url(#metal)" opacity=".46"/>
+
+  <path d="m597 56 101 43 64-9 111 17 127-38m-395 57 70-15 55 15 47-9" stroke="#89351c" fill="none"/>
+  <g fill="none" stroke="url(#metal)">
+    <circle cx="838" cy="80" r="52" stroke-dasharray="35 13" opacity=".75"/>
+    <circle class="flow" cx="838" cy="80" r="62" stroke-width="2" stroke-dasharray="4 8 25 14"/>
+  </g>
+  <path class="shade" d="m838 40 35 40-35 42-35-42Z" stroke="#ffa343"/>
+  <path d="m838 47 31 33-31 33-31-33Z" fill="url(#metal)"/>
+  <path d="m838 54 18 26-18 26-18-26Z" fill="#ff521e"/>
+  <path d="m838 14 8 17-8 8-8-8Zm66 66-17 8-8-8 8-8Zm-66 66-8-17 8-8 8 8Zm-66-66 17-8 8 8-8 8Z" fill="#ffcc5a"/>
+  <path class="flow" d="M548 114c102 4 136-43 229-34m120-2 101 19M657 131l99-37m143-20 101-64" fill="none" stroke="#ffb65b" stroke-dasharray="18 42"/>
+  <circle cx="711" cy="55" r="2" fill="#fff7b8"/><circle cx="943" cy="104" r="2.5" fill="#ffa843"/>
+</svg>

@@ -15,6 +15,7 @@ import {
   Upload,
 } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
+import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { request, post } from '../api/client';
 import {
@@ -28,12 +29,24 @@ import {
 import type { ShopForm } from '../api/shop';
 import type { ShopItem } from '../api/types';
 import { AVATAR_FRAMES, findAvatarFrame } from '../data/avatar-frames';
-import { NAMEPLATE_STYLES, nameplateImage } from '../data/nameplates';
+import { NAMEPLATE_STYLES, SHOP_NAMEPLATE_PRESETS, nameplateImage } from '../data/nameplates';
 import { DYNAMIC_BACKGROUNDS } from '../data/dynamic-backgrounds';
 import '../styles/shop.css';
 import { useViewer } from '../auth';
 import { can } from '../permissions/access';
 import Permit from './Permit';
+
+async function uploadShopImage(file: File) {
+  validateShopImage(file);
+  const body = new FormData();
+  body.append('file', file);
+  const result = await request<{ url: string }>('/api/admin/shop/upload-icon', {
+    method: 'POST',
+    body,
+  });
+  if (!imageSource(result.url)) throw new Error('上传服务没有返回有效图片地址');
+  return result;
+}
 
 export default function ShopEditor({ item, onClose }: { item?: ShopItem; onClose: () => void }) {
   const viewer = useViewer();
@@ -46,18 +59,12 @@ export default function ShopEditor({ item, onClose }: { item?: ShopItem; onClose
   const effect = Form.useWatch('effectValue', form);
   const name = Form.useWatch('name', form);
   const dynamic = Form.useWatch('dynamicBg', form);
+  const canUpload = can(viewer, 'shop.upload');
+  const publishedTemplates = useRef(new Map<string, string>());
   const upload = useMutation({
     mutationFn: async (file: File) => {
-      if (!can(viewer, 'shop.upload')) throw new Error('当前账号没有图片上传权限');
-      validateShopImage(file);
-      const body = new FormData();
-      body.append('file', file);
-      const result = await request<{ url: string }>('/api/admin/shop/upload-icon', {
-        method: 'POST',
-        body,
-      });
-      if (!imageSource(result.url)) throw new Error('上传服务没有返回有效图片地址');
-      return result;
+      if (!canUpload) throw new Error('当前账号没有图片上传权限');
+      return uploadShopImage(file);
     },
     onSuccess: (result) => {
       form.setFieldValue('icon', result.url);
@@ -65,11 +72,27 @@ export default function ShopEditor({ item, onClose }: { item?: ShopItem; onClose
     },
   });
   const save = useMutation({
-    mutationFn: (values: ShopForm) =>
-      post(
-        item ? `/api/admin/shop/${item.id}` : '/api/admin/shop/create',
-        shopPayload(values, item),
-      ),
+    mutationFn: async (values: ShopForm) => {
+      const body = shopPayload(values, item);
+      const template = SHOP_NAMEPLATE_PRESETS.find((plate) => plate.value === body.effectValue);
+      if (category === 'NAMEPLATE' && template) {
+        if (!canUpload) throw new Error('当前账号没有图片上传权限');
+        let url = publishedTemplates.current.get(template.value);
+        if (!url) {
+          const asset = await fetch(template.image, { signal: AbortSignal.timeout(10_000) });
+          if (!asset.ok || !asset.headers.get('content-type')?.includes('image/svg+xml'))
+            throw new Error('动态铭牌素材暂不可用，请刷新后重试');
+          const image = new File([await asset.blob()], template.filename, {
+            type: 'image/svg+xml',
+          });
+          url = (await uploadShopImage(image)).url;
+          publishedTemplates.current.set(template.value, url);
+        }
+        body.icon = url;
+        body.effectValue = 'custom';
+      }
+      return post(item ? `/api/admin/shop/${item.id}` : '/api/admin/shop/create', body);
+    },
     onSuccess: async (data) => {
       void message.success(data.msg || '商品已保存');
       onClose();
@@ -89,7 +112,8 @@ export default function ShopEditor({ item, onClose }: { item?: ShopItem; onClose
     category === 'AVATAR_FRAME' && frame
       ? findAvatarFrame(frame)?.image
       : category === 'NAMEPLATE' && effect !== 'custom'
-        ? nameplateImage(effect || 'champion')
+        ? SHOP_NAMEPLATE_PRESETS.find((plate) => plate.value === effect)?.image ||
+          nameplateImage(effect || 'champion')
         : imageSource(icon);
   return (
     <Modal
@@ -189,10 +213,19 @@ export default function ShopEditor({ item, onClose }: { item?: ShopItem; onClose
           <Form.Item name="effectValue" label="铭牌样式">
             <Select
               virtual={false}
+              showSearch
+              optionFilterProp="label"
               options={[
                 ...NAMEPLATE_STYLES.map((plate) => ({ value: plate.value, label: plate.label })),
+                ...(canUpload ? [{ label: '动态模板', options: SHOP_NAMEPLATE_PRESETS }] : []),
                 { value: 'custom', label: '自定义横幅' },
               ]}
+              onChange={(value) => {
+                upload.reset();
+                const template = SHOP_NAMEPLATE_PRESETS.find((plate) => plate.value === value);
+                if (template && !form.getFieldValue('name')?.trim())
+                  form.setFieldValue('name', template.name);
+              }}
             />
           </Form.Item>
         )}

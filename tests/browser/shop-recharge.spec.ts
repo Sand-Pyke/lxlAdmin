@@ -26,6 +26,41 @@ test.beforeEach(async ({ request }) => {
   await request.get('/api/__test/reset');
 });
 
+test('a dynamic nameplate template previews and publishes through the shared shop upload', async ({
+  page,
+  request,
+}) => {
+  await login(page);
+  await page.getByRole('button', { name: '新建商品', exact: true }).click();
+  await select(page, '商品分类', '铭牌');
+  await select(page, '铭牌样式', '黑曜龙息 · 动态');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByLabel('商品名称', { exact: true })).toHaveValue('铭牌·黑曜龙息');
+  const image = dialog.getByAltText('商品图片预览');
+  await expect(image).toHaveAttribute('src', '/nameplate-presets/black-dragon.svg');
+  await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1000);
+  await dialog.getByLabel('价格（冠军币）', { exact: true }).fill('1999');
+  await dialog.getByRole('button', { name: '保存商品', exact: true }).click();
+  await expect(page.getByRole('row').filter({ hasText: '铭牌·黑曜龙息' })).toBeVisible();
+  const calls = await (await request.get('/api/__test/calls')).json();
+  expect(
+    calls
+      .filter((call: { path: string }) =>
+        ['/api/admin/shop/upload-icon', '/api/admin/shop/create'].includes(call.path),
+      )
+      .map((call: { body: object }) => call.body),
+  ).toEqual([
+    expect.objectContaining({
+      file: expect.objectContaining({ name: 'black-dragon.svg', type: 'image/svg+xml' }),
+    }),
+    expect.objectContaining({
+      category: 'NAMEPLATE',
+      effectValue: 'custom',
+      icon: '/assets/shop-icons/fixture-icon.png',
+    }),
+  ]);
+});
+
 test('custom image upload, creation, editing and confirmed deletion work end to end', async ({
   page,
   request,

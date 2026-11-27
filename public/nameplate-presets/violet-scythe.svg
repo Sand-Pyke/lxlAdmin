@@ -1,0 +1,27 @@
+<svg id="still" xmlns="http://www.w3.org/2000/svg" width="1000" height="160" viewBox="0 0 1000 160">
+  <defs>
+    <linearGradient id="bg"><stop stop-color="#080e1c"/><stop offset=".46" stop-color="#0d1423"/><stop offset="1" stop-color="#2a1336"/></linearGradient>
+    <radialGradient id="light" cx="84%" cy="49%" r="42%"><stop stop-color="#eb50f8" stop-opacity=".34"/><stop offset="1" stop-color="#eb50f8" stop-opacity="0"/></radialGradient>
+    <linearGradient id="metal" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#eb50f8"/><stop offset="1" stop-color="#f2c4ff"/></linearGradient>
+  </defs>
+  <style>
+    .flow{animation:trace 6s linear infinite}
+    .shade{fill:#eb50f8;opacity:.3;transform-box:fill-box;transform-origin:center;animation:drift 5s ease-in-out infinite}
+    @keyframes trace{to{stroke-dashoffset:-138}}
+    @keyframes drift{0%,100%{opacity:.24;transform:scale(1)}50%{opacity:.56;transform:translate(7px,-3px)}}
+    :root:target *{animation:none!important}
+    @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+  </style>
+  <path fill="url(#bg)" d="M0 0h1000v160H0Z"/>
+  <path fill="url(#light)" d="M425 0h575v160H425Z"/>
+  <path d="M468 1h171l13 7h81m-358 151h138l17-7h167m214 7h88" fill="none" stroke="url(#metal)" opacity=".46"/>
+
+  <path d="M605 145 781 67l105 6 102-41M648 149 770 97l127 20 103-44" fill="none" stroke="#9c3fbd" opacity=".25"/>
+  <path class="flow" d="M532 154c135-37 320-128 440-115M641 151c160-70 239-72 356-27" stroke="#fd8bfc" fill="none" stroke-dasharray="36 78 2 21"/>
+  <path class="shade" d="M714 144 831 49c-25-9-49-2-72 13 39-52 96-60 130-37 22 15 33 44 22 69-4-23-19-46-43-44l-114 96Z"/>
+  <path d="m730 143 104-90 13 5-105 93Z" fill="url(#metal)"/>
+  <path d="M765 62c33-46 90-57 121-31 16 13 24 33 24 57-16-35-42-49-64-35-22-14-54-7-81 9Z" fill="url(#metal)"/>
+  <path d="M795 43c44-28 91-19 105 19" fill="none" stroke="#fff1ff" stroke-width="1.5"/>
+  <path d="M838 51c-1-8 5-13 13-10 6 3 9 12 4 17-6 7-15 3-17-7Z" fill="#f6c1ff"/>
+  <path d="m697 68 4-8 6 7-4 7Zm237 30 6-9 6 8-5 8Zm-39 19 4-6 5 5-3 6Z" fill="#eaa1ff"/>
+</svg>

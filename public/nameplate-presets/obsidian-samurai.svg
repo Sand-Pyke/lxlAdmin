@@ -1,0 +1,26 @@
+<svg id="still" xmlns="http://www.w3.org/2000/svg" width="1000" height="160" viewBox="0 0 1000 160">
+  <defs>
+    <linearGradient id="bg"><stop stop-color="#080e1c"/><stop offset=".46" stop-color="#0d1423"/><stop offset="1" stop-color="#29141b"/></linearGradient>
+    <radialGradient id="light" cx="84%" cy="49%" r="42%"><stop stop-color="#f23d52" stop-opacity=".34"/><stop offset="1" stop-color="#f23d52" stop-opacity="0"/></radialGradient>
+    <linearGradient id="metal" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#f23d52"/><stop offset="1" stop-color="#ffd3a6"/></linearGradient>
+  </defs>
+  <style>
+    .flow{animation:trace 6s linear infinite}
+    .shade{fill:#f23d52;opacity:.3;transform-box:fill-box;transform-origin:center;animation:drift 5s ease-in-out infinite}
+    @keyframes trace{to{stroke-dashoffset:-138}}
+    @keyframes drift{0%,100%{opacity:.24;transform:scale(1)}50%{opacity:.56;transform:translate(7px,-3px)}}
+    :root:target *{animation:none!important}
+    @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+  </style>
+  <path fill="url(#bg)" d="M0 0h1000v160H0Z"/>
+  <path fill="url(#light)" d="M425 0h575v160H425Z"/>
+  <path d="M468 1h171l13 7h81m-358 151h138l17-7h167m214 7h88" fill="none" stroke="url(#metal)" opacity=".46"/>
+
+  <circle cx="855" cy="62" r="45" fill="#ff4630" opacity=".33"/>
+  <path class="flow" d="M853 15a47 47 0 1 1 0 94 47 47 0 1 1 0-94Z" fill="none" stroke="#ff785c" stroke-dasharray="18 30"/>
+  <path class="shade" d="m795 28 25 23 33-13 35 13 24-23-8 45 15 22-24-1-19 38h-46l-24-30-24 4 13-26Z"/>
+  <path d="m787 39 35 22 32-12 34 12 23-22-10 39 12 12-25 1-10 27-22 14-24-13-13-28-23 3 10-18Z" fill="#1e171e" stroke="url(#metal)" stroke-width="2"/>
+  <path d="m813 82 35 8 4 8-28-6Zm83 0-32 8-7 8 28-6Zm-58 25 15 7 18-8-6 16-13 5-12-8Z" fill="url(#metal)"/>
+  <path d="M590 137 745 76m-85 49 111-47m136-52L989 0" fill="none" stroke="#ff7f54" opacity=".45"/>
+  <path class="flow" d="M538 153 923 20m-306 127 367-86" fill="none" stroke="#ffc479" stroke-dasharray="42 93 2 43"/>
+</svg>
