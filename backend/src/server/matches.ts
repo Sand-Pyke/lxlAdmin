@@ -136,8 +136,10 @@ const asInt = (value: string | null, fallback = 0) => {
  * - keyword: 名称模糊；dateFrom/dateTo 按排期时间；createdFrom/createdTo 按创建时间（后台管理用）。
  * - sort: date_asc（默认，当前赛事按时间先后）/ date_desc（历史页分页）/ created_desc（后台赛事管理）。
  */
-export async function listMatches(request: NextRequest) {
-  const user = await getSessionUser(request);
+export async function listMatches(
+  request: NextRequest,
+  user: Awaited<ReturnType<typeof getSessionUser>>,
+) {
   const params = new URL(request.url).searchParams;
   const page = Math.max(0, asInt(params.get('page')));
   const pageSize = Math.min(
@@ -200,6 +202,7 @@ export async function listMatches(request: NextRequest) {
   const [total, rows, signedIds] = await Promise.all([
     prisma.match.count({ where }),
     prisma.match.findMany({
+      relationLoadStrategy: 'join',
       where,
       orderBy,
       skip: page * pageSize,

@@ -71,6 +71,27 @@ test('team selection submits one batch and enters while the follow-up read is pe
   }
 });
 
+test('picking a player updates the roster while the follow-up read waits', async ({ page }) => {
+  await enter(page);
+  let releaseRead!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseRead = resolve;
+  });
+  await page.route('**/api/admin/pick/1?live=1', async (route) => {
+    await gate;
+    await route.continue();
+  });
+  try {
+    await page.locator('[data-sign-id="101"]').click();
+    await expect(page.locator('[data-team-group-id="201"]')).toContainText('选人测试1#1234', {
+      timeout: 3000,
+    });
+    await expect(page.locator('[data-team-group-id="202"]')).toContainText('当前选人');
+  } finally {
+    releaseRead();
+  }
+});
+
 test('1.0 manual picks, unassignment, rank filtering, budget override and refresh recovery', async ({
   page,
   request,

@@ -88,6 +88,16 @@ export type Board = {
 };
 
 export type DraftData = { board: Board; signs: Sign[]; leaderboard_ready?: boolean };
+type DraftPick = {
+  signId: number;
+  teamId: number;
+  teamPosition: string;
+  positionOrder: number;
+  isCaptain: boolean;
+  orders?: { id: number; draftOrder: number }[];
+  playerCount: number;
+  usedFee: number;
+};
 
 const POSITIONS = POSITION_OPTIONS.map((position) => ({
   value: position,
@@ -665,7 +675,7 @@ export function BigScreenDraft({
     }
     setBusySign(sign.id);
     try {
-      await postJson('/api/admin/team/assign', {
+      const { draftPick } = await postJson<{ draftPick?: DraftPick }>('/api/admin/team/assign', {
         signId: sign.id,
         teamId: targetTeam.id,
         teamPosition: assignmentPosition(sign) || null,
@@ -680,9 +690,44 @@ export function BigScreenDraft({
         `${sign.game_name || sign.yy_name || sign.username} 已加入 ${targetTeam.name}`,
       );
       dirtyRef.current = true;
-      await playFlyAnimation(sign.id, targetTeam.id);
-      const refreshed = await reload();
-      if (refreshed) focusNextTeam(refreshed.board.teams);
+      playFlyAnimation(sign.id, targetTeam.id);
+      if (draftPick) {
+        await queryClient.cancelQueries({ queryKey, exact: true });
+        const orders = new Map(draftPick.orders?.map(({ id, draftOrder }) => [id, draftOrder]));
+        const updated = queryClient.setQueryData<DraftData>(queryKey, (current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            signs: current.signs.map((entry) =>
+              entry.id === draftPick.signId
+                ? {
+                    ...entry,
+                    team_id: draftPick.teamId,
+                    team_pos: draftPick.teamPosition,
+                    pos_order: draftPick.positionOrder,
+                    is_captain: draftPick.isCaptain,
+                    is_waitlisted: false,
+                  }
+                : entry,
+            ),
+            board: {
+              ...current.board,
+              teams: current.board.teams.map((entry) => ({
+                ...entry,
+                draft_order: orders.get(entry.id) ?? entry.draft_order,
+                ...(entry.id === draftPick.teamId
+                  ? { player_count: draftPick.playerCount, used_fee: draftPick.usedFee }
+                  : {}),
+              })),
+            },
+          };
+        });
+        if (updated) focusNextTeam(updated.board.teams);
+        void queryClient.invalidateQueries({ queryKey, exact: true });
+      } else {
+        const refreshed = await reload();
+        if (refreshed) focusNextTeam(refreshed.board.teams);
+      }
     } catch (error) {
       message.error(errorText(error, '选人失败，请检查队伍人数和预算'));
     } finally {
@@ -708,49 +753,47 @@ export function BigScreenDraft({
   }
 
   function playFlyAnimation(signId: number, teamId: number) {
-    return new Promise<void>((resolve) => {
-      const source = document.querySelector<HTMLElement>(`[data-sign-id="${signId}"]`);
-      if (!source) return resolve();
-      const bounds = source.getBoundingClientRect();
-      const clone = source.cloneNode(true) as HTMLElement;
-      clone.classList.add('big-draft-flying-card');
-      Object.assign(clone.style, {
-        left: `${bounds.left}px`,
-        top: `${bounds.top}px`,
-        width: `${bounds.width}px`,
-        height: `${bounds.height}px`,
-      });
-      (document.querySelector('.big-draft') || document.body).appendChild(clone);
-      window.setTimeout(resolve, 850);
-      window.requestAnimationFrame(() =>
-        window.requestAnimationFrame(() => {
-          const target = document.querySelector<HTMLElement>(`[data-team-id="${teamId}"]`);
-          const targetBounds = target?.getBoundingClientRect();
-          const destinationX =
-            (targetBounds ? targetBounds.left + targetBounds.width / 2 : window.innerWidth * 0.13) -
-            (bounds.left + bounds.width / 2);
-          const destinationY =
-            (targetBounds
-              ? targetBounds.top + targetBounds.height * 0.45
-              : window.innerHeight * 0.42) -
-            (bounds.top + bounds.height / 2);
-          const animation = clone.animate(
-            [
-              { transform: 'translate(0, 0) scale(1)', opacity: 1 },
-              {
-                transform: `translate(${destinationX}px, ${destinationY}px) scale(.14)`,
-                opacity: 0.1,
-              },
-            ],
-            { duration: 680, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' },
-          );
-          animation.onfinish = () => {
-            clone.remove();
-            resolve();
-          };
-        }),
-      );
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const source = document.querySelector<HTMLElement>(`[data-sign-id="${signId}"]`);
+    if (!source || !source.animate) return;
+    const bounds = source.getBoundingClientRect();
+    const clone = source.cloneNode(true) as HTMLElement;
+    clone.classList.add('big-draft-flying-card');
+    Object.assign(clone.style, {
+      left: `${bounds.left}px`,
+      top: `${bounds.top}px`,
+      width: `${bounds.width}px`,
+      height: `${bounds.height}px`,
     });
+    (document.querySelector('.big-draft') || document.body).appendChild(clone);
+    window.setTimeout(() => clone.remove(), 750);
+    window.requestAnimationFrame(() =>
+      window.requestAnimationFrame(() => {
+        const target = document.querySelector<HTMLElement>(`[data-team-id="${teamId}"]`);
+        const targetBounds = target?.getBoundingClientRect();
+        const destinationX =
+          (targetBounds ? targetBounds.left + targetBounds.width / 2 : window.innerWidth * 0.13) -
+          (bounds.left + bounds.width / 2);
+        const destinationY =
+          (targetBounds
+            ? targetBounds.top + targetBounds.height * 0.45
+            : window.innerHeight * 0.42) -
+          (bounds.top + bounds.height / 2);
+        const animation = clone.animate(
+          [
+            { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+            {
+              transform: `translate(${destinationX}px, ${destinationY}px) scale(.14)`,
+              opacity: 0.1,
+            },
+          ],
+          { duration: 440, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' },
+        );
+        animation.onfinish = () => {
+          clone.remove();
+        };
+      }),
+    );
   }
 
   if (draft.isFetching && !data) {

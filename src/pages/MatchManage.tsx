@@ -112,8 +112,9 @@ export default function MatchManage() {
 
   const boardQuery = useQuery({
     queryKey: ['match-board', matchId],
-    queryFn: ({ signal }) => fetchMatchBoard(matchId),
+    queryFn: ({ signal }) => fetchMatchBoard(matchId, signal),
     enabled: Number.isInteger(matchId) && matchId > 0,
+    retry: false,
   });
   const board = boardQuery.data;
   const canEditFormat = Boolean(

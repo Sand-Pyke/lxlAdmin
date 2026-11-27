@@ -267,6 +267,6 @@ export type MatchBoard = {
   } | null;
 };
 
-export function fetchMatchBoard(id: number) {
-  return request<MatchBoard>(`/api/admin/teams/${id}`);
+export function fetchMatchBoard(id: number, signal?: AbortSignal) {
+  return request<MatchBoard>(`/api/admin/teams/${id}`, { signal });
 }

@@ -493,12 +493,18 @@ try {
     400,
   );
   const assignRoute = '/api/admin/team/assign';
-  await post(assignRoute, cookies.admin, {
+  const pick = await post(assignRoute, cookies.admin, {
     ...balancedBody,
     signId: balancedSignups[2].id,
     teamId: balancedTeams[0].id,
     teamPosition: 'MID',
   });
+  assert.equal(pick.draftPick.signId, balancedSignups[2].id);
+  assert.equal(pick.draftPick.teamId, balancedTeams[0].id);
+  assert.equal(pick.draftPick.teamPosition, 'MID');
+  assert.equal(pick.draftPick.playerCount, 3);
+  assert.equal(pick.draftOrderUpdated, true);
+  assert.equal(pick.draftPick.orders.length, 4);
   const fourthPick = await call(assignRoute, {
     method: 'POST',
     cookie: cookies.admin,

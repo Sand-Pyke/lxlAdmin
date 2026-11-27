@@ -48,8 +48,9 @@ export function signRank(sign: SignWithRank) {
 export async function matchBudget(matchId: number, db: Prisma.TransactionClient = prisma) {
   const [signs, teamCount] = await Promise.all([
     db.matchSignup.findMany({
+      relationLoadStrategy: 'join',
       where: { matchId, isWaitlisted: false },
-      include: { user: { include: { profile: { select: { rank: true } } } } },
+      include: { user: { select: { profile: { select: { rank: true } } } } },
     }),
     db.team.count({ where: activeMatchTeamWhere(matchId) }),
   ]);
@@ -469,7 +470,7 @@ export async function reorderDraftAfterCompletedRound(
   matchId: number,
   transaction?: Prisma.TransactionClient,
   draftTeamIds?: readonly number[],
-): Promise<boolean> {
+): Promise<{ id: number; draftOrder: number }[] | null> {
   if (!transaction) {
     return prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "Match" WHERE "id" = ${matchId} FOR UPDATE`;
@@ -477,22 +478,28 @@ export async function reorderDraftAfterCompletedRound(
     });
   }
   const db = transaction;
-  const [teams, signs, match] = await Promise.all([
-    db.team.findMany({
-      where: {
-        ...activeMatchTeamWhere(matchId),
-        ...(draftTeamIds ? { id: { in: [...draftTeamIds] } } : {}),
-      },
-      orderBy: [{ draftOrder: 'asc' }, { id: 'asc' }],
-    }),
+  const teams = await db.team.findMany({
+    relationLoadStrategy: 'join',
+    where: {
+      ...activeMatchTeamWhere(matchId),
+      ...(draftTeamIds ? { id: { in: [...draftTeamIds] } } : {}),
+    },
+    include: { _count: { select: { signups: { where: { isWaitlisted: false, matchId } } } } },
+    orderBy: [{ draftOrder: 'asc' }, { id: 'asc' }],
+  });
+  const completedRound = teams[0]?._count.signups;
+  // Only fetch full rosters when all participating teams have finished this round.
+  if (!completedRound || !teams.every((team) => team._count.signups === completedRound))
+    return null;
+  const [signs, match] = await Promise.all([
     db.matchSignup.findMany({
+      relationLoadStrategy: 'join',
       where: { matchId, teamId: { not: null }, isWaitlisted: false },
-      include: { user: { include: { profile: { select: { rank: true } } } } },
+      include: { user: { select: { profile: { select: { rank: true } } } } },
       orderBy: [{ positionOrder: 'asc' }, { id: 'asc' }],
     }),
     db.match.findUniqueOrThrow({ where: { id: matchId } }),
   ]);
-  if (!teams.length) return false;
 
   const members = new Map<number, typeof signs>();
   for (const sign of signs) {
@@ -500,13 +507,6 @@ export async function reorderDraftAfterCompletedRound(
     const teamMembers = members.get(sign.teamId) ?? [];
     teamMembers.push(sign);
     members.set(sign.teamId, teamMembers);
-  }
-
-  const memberCounts = teams.map((team) => members.get(team.id)?.length ?? 0);
-  const completedRound = memberCounts[0];
-  // 只有每队人数相等时才代表本轮录入完成；此时立即更新下一轮顺位。
-  if (!completedRound || !memberCounts.every((count) => count === completedRound)) {
-    return false;
   }
 
   // 队长就位（每队1人）后生成首轮选人顺位；每队选入第2人后进入第二轮。
@@ -528,11 +528,10 @@ export async function reorderDraftAfterCompletedRound(
     }),
   ).sort((a, b) => a.draftFee - b.draftFee);
 
+  const orders = nextOrder.map(({ team }, index) => ({ id: team.id, draftOrder: index + 1 }));
   const write = async (tx: Prisma.TransactionClient) => {
     await Promise.all(
-      nextOrder.map(({ team }, index) =>
-        tx.team.update({ where: { id: team.id }, data: { draftOrder: index + 1 } }),
-      ),
+      orders.map(({ id, draftOrder }) => tx.team.update({ where: { id }, data: { draftOrder } })),
     );
     if (firstRound)
       await tx.userInventory.updateMany({
@@ -549,7 +548,7 @@ export async function reorderDraftAfterCompletedRound(
       });
   };
   await write(transaction);
-  return true;
+  return orders;
 }
 
 /** 队伍名映射 + 每队已用费用。 */
@@ -801,17 +800,14 @@ export async function assignSignup(input: AssignSignupInput) {
 async function assignSignupInTransaction(input: AssignSignupInput, tx: Prisma.TransactionClient) {
   const { signId, teamId } = input;
   const sign = await tx.matchSignup.findUnique({
+    relationLoadStrategy: 'join',
     where: { id: signId },
-    include: { user: { include: { profile: { select: { rank: true } } } } },
+    include: { match: true, user: { select: { profile: { select: { rank: true } } } } },
   });
   if (!sign) return { kind: 'sign_not_found' as const };
-  const signMatch = await tx.match.findUnique({
-    where: { id: sign.matchId },
-    select: { status: true },
-  });
-  if (!signMatch) return { kind: 'match_not_found' as const };
+  const match = sign.match;
   if (
-    signMatch.status !== 'CREATED' &&
+    match.status !== 'CREATED' &&
     (input.balancedDraft || (await statusStillBlocked(input.actorId, true)))
   )
     return { kind: 'match_started' as const };
@@ -832,13 +828,16 @@ async function assignSignupInTransaction(input: AssignSignupInput, tx: Prisma.Tr
     return { kind: 'ok' as const };
   }
 
-  const [team, match] = await Promise.all([
-    tx.team.findUnique({ where: { id: teamId } }),
-    tx.match.findUnique({ where: { id: sign.matchId } }),
-  ]);
+  const team = await tx.team.findUnique({
+    relationLoadStrategy: 'join',
+    where: { id: teamId },
+    include: {
+      signups: { include: { user: { select: { profile: { select: { rank: true } } } } } },
+    },
+  });
   if (!team || team.matchId !== sign.matchId) return { kind: 'team_mismatch' as const };
-  if (!match) return { kind: 'match_not_found' as const };
-  await assertCaptainTeamsReady(tx, sign.matchId);
+  if (match.captainPosition) await assertCaptainTeamsReady(tx, sign.matchId);
+  const teammates = team.signups.filter((member) => member.id !== signId);
   if (
     team.captainSignupId &&
     sign.mainPosition === match.captainPosition &&
@@ -848,20 +847,12 @@ async function assignSignupInTransaction(input: AssignSignupInput, tx: Prisma.Tr
 
   if (match.captainPosition) {
     const isCaptain = sign.mainPosition === match.captainPosition;
-    if (!isCaptain && !(await tx.matchSignup.count({ where: { teamId } })))
-      throw badRequest('请先将本场指定分路的队长分配到该队');
-    if (
-      isCaptain &&
-      (await tx.matchSignup.count({
-        where: { teamId, id: { not: signId }, mainPosition: match.captainPosition },
-      }))
-    )
+    if (!isCaptain && !team.signups.length) throw badRequest('请先将本场指定分路的队长分配到该队');
+    if (isCaptain && teammates.some((member) => member.mainPosition === match.captainPosition))
       throw badRequest('该队已有队长，每队只能有一名指定分路的队长');
   }
 
-  const targetMemberCount = await tx.matchSignup.count({
-    where: { teamId, id: { not: signId } },
-  });
+  const targetMemberCount = teammates.length;
   if (input.balancedDraft && sign.teamId !== teamId && targetMemberCount >= 3)
     throw badRequest('大屏选人 2.0 的最后两个位置请使用智能分配');
   if (sign.teamId !== teamId && targetMemberCount >= POSITIONS.length) {
@@ -877,10 +868,6 @@ async function assignSignupInTransaction(input: AssignSignupInput, tx: Prisma.Tr
       typeof input.overrideBudget === 'number' && input.overrideBudget > 0
         ? input.overrideBudget
         : await matchBudget(sign.matchId, tx);
-    const teammates = await tx.matchSignup.findMany({
-      where: { teamId, id: { not: signId } },
-      include: { user: { include: { profile: { select: { rank: true } } } } },
-    });
     const used = teammates.reduce((sum, member) => sum + rankFee(signRank(member)), 0);
     const fee = rankFee(signRank(sign));
     if (used + fee > budget) {
@@ -888,53 +875,68 @@ async function assignSignupInTransaction(input: AssignSignupInput, tx: Prisma.Tr
     }
   }
 
-  const teammateOrders = await tx.matchSignup.findMany({
-    where: { teamId },
-    select: { positionOrder: true },
-  });
-  const maxOrder = teammateOrders.reduce((max, row) => Math.max(max, row.positionOrder), 0);
+  const maxOrder = team.signups.reduce((max, row) => Math.max(max, row.positionOrder), 0);
+  const occupied = input.teamPosition
+    ? teammates.find((member) => member.teamPosition === input.teamPosition)
+    : undefined;
+  const isCaptain = match.captainPosition
+    ? sign.mainPosition === match.captainPosition
+    : sign.teamId === teamId
+      ? sign.isCaptain
+      : targetMemberCount === 0;
 
-  {
-    if (input.teamPosition) {
-      const occupied = await tx.matchSignup.findFirst({
-        where: { teamId, teamPosition: input.teamPosition, id: { not: signId } },
-      });
-      if (occupied) {
-        const vacated = isPosition(sign.teamPosition) ? sign.teamPosition : null;
-        await tx.matchSignup.update({
-          where: { id: occupied.id },
-          data: {
-            teamPosition: vacated ?? '',
-            positionOrder: vacated ? occupied.positionOrder : 0,
-          },
-        });
-      }
-    }
+  if (occupied) {
+    const vacated = isPosition(sign.teamPosition) ? sign.teamPosition : null;
     await tx.matchSignup.update({
-      where: { id: signId },
+      where: { id: occupied.id },
       data: {
-        teamId,
-        teamPosition: input.teamPosition ?? '',
-        positionOrder: maxOrder + 1,
-        isCaptain: match.captainPosition
-          ? sign.mainPosition === match.captainPosition
-          : sign.teamId === teamId
-            ? sign.isCaptain
-            : targetMemberCount === 0,
-        isWaitlisted: false,
-        waitlistOrigin: sign.isWaitlisted || sign.waitlistOrigin,
+        teamPosition: vacated ?? '',
+        positionOrder: vacated ? occupied.positionOrder : 0,
       },
     });
   }
+  await tx.matchSignup.update({
+    where: { id: signId },
+    data: {
+      teamId,
+      teamPosition: input.teamPosition ?? '',
+      positionOrder: maxOrder + 1,
+      isCaptain,
+      isWaitlisted: false,
+      waitlistOrigin: sign.isWaitlisted || sign.waitlistOrigin,
+    },
+  });
 
   if (sign.teamId && sign.teamId !== teamId) await ensureTeamCaptain(sign.teamId, tx);
-  await ensureTeamCaptain(teamId, tx);
+  const captainAlreadySet = isCaptain || teammates.some((member) => member.isCaptain);
+  if (match.captainPosition || !captainAlreadySet) await ensureTeamCaptain(teamId, tx);
 
-  const draftOrderUpdated =
+  const orders =
     wasUnassigned || sign.teamId !== teamId
       ? await reorderDraftAfterCompletedRound(sign.matchId, tx, input.draftTeamIds)
-      : false;
-  return { kind: 'ok' as const, draftOrderUpdated };
+      : null;
+  const draftPick =
+    input.draftTeamIds &&
+    wasUnassigned &&
+    !occupied &&
+    !sign.isWaitlisted &&
+    captainAlreadySet &&
+    !match.captainPosition
+      ? {
+          signId,
+          teamId,
+          teamPosition: input.teamPosition ?? '',
+          positionOrder: maxOrder + 1,
+          isCaptain,
+          orders: orders ?? [],
+          playerCount: teammates.filter((member) => !member.isWaitlisted).length + 1,
+          usedFee: teammates.reduce(
+            (sum, member) => sum + (member.isWaitlisted ? 0 : rankFee(signRank(member))),
+            rankFee(signRank(sign)),
+          ),
+        }
+      : undefined;
+  return { kind: 'ok' as const, draftOrderUpdated: Boolean(orders), draftPick };
 }
 
 /** 队内位置调换（up / down）。 */

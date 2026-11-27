@@ -149,7 +149,18 @@ export function draftRequest(req, res, url, body, matches = []) {
     sign.team_id = team.id;
     sign.team_pos = body.teamPosition;
     sync();
-    return send({ msg: '分配完成' });
+    return send({
+      msg: '分配完成',
+      draftPick: body.draftTeamIds && {
+        signId: sign.id,
+        teamId: team.id,
+        teamPosition: sign.team_pos,
+        positionOrder: team.player_count,
+        isCaptain: team.player_count === 1,
+        playerCount: team.player_count,
+        usedFee: team.used_fee,
+      },
+    });
   }
   if (path === '/api/admin/team/auto_assign') {
     if (!body.balancedDraft) clear();
