@@ -744,10 +744,10 @@ try {
     ...opening,
     roundNo: 1,
   });
-  assert.equal(
-    (await db.matchMarket.findUniqueOrThrow({ where: { id: poolId } })).pricingMode,
-    'POOL',
-  );
+  const freshPool = await db.matchMarket.findUniqueOrThrow({ where: { id: poolId } });
+  assert.equal(freshPool.pricingMode, 'POOL');
+  assert.equal(freshPool.maxStake, 500);
+  assert.equal(freshPool.perUserCap, 500);
   const poolOutcomes = await db.marketOutcome.findMany({
     where: { marketId: poolId },
     orderBy: { outcomeKey: 'asc' },

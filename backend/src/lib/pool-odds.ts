@@ -1,7 +1,7 @@
 export const POOL_PRICING = 'POOL';
 export const NO_OPPOSITION = 'NO_OPPOSITION';
 export const POOL_MIN_SIDE_STAKE = 50;
-export const POOL_ALL_IN_LIMIT = 2000;
+export const BET_MAX_ORDINARY_STAKE = 500;
 export const POOL_MAX_ODDS = 20;
 const POOL_VOID_LABELS = {
   NO_OPPOSITION: '未形成双边下注',

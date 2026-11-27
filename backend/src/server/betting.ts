@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { badRequest, forbidden, notFound } from '@/server/api';
 import { pairTeams, rankFee, signRank } from '@/server/roster';
 import { matchOdds, payoutFor } from '@/server/odds';
-import { POOL_ALL_IN_LIMIT, POOL_PRICING, poolQuote, poolVoidReason } from '@/lib/pool-odds';
+import { BET_MAX_ORDINARY_STAKE, POOL_PRICING, poolQuote, poolVoidReason } from '@/lib/pool-odds';
 import { applyLedger, lockWallet } from '@/server/points';
 import { boForRound, CUSTOM_FORMAT, gameCountForBo, marketRoundLabel } from '@/lib/admin-options';
 import { isLineupReady } from '@/lib/lineup-readiness';
@@ -389,8 +389,8 @@ export async function openMarket(body: Record<string, unknown>) {
         teamTwoId: pairing?.teamTwoId ?? null,
         returnRate,
         sigma,
-        maxStake: 200,
-        perUserCap: 200,
+        maxStake: BET_MAX_ORDINARY_STAKE,
+        perUserCap: BET_MAX_ORDINARY_STAKE,
         bettingOpenAt: openedAt,
         bettingCloseAt: resolvedCloseAt,
       },
@@ -470,16 +470,13 @@ export async function placeBet(
     if (market.status !== 'OPEN') throw badRequest('盘口已关闭，不能投注');
     if (Date.now() >= market.bettingCloseAt.getTime()) throw badRequest('投注已截止');
 
-    const maximum = Math.min(200, market.maxStake, market.perUserCap);
+    const maximum = Math.min(BET_MAX_ORDINARY_STAKE, market.maxStake, market.perUserCap);
     if (!Number.isSafeInteger(stake) || stake < market.minStake || (!allIn && stake > maximum))
       throw badRequest(
         allIn
           ? `ALL IN 至少需要 ${market.minStake} 冠军币`
           : `普通单注需在 ${market.minStake}~${maximum} 冠军币之间`,
       );
-
-    if (market.pricingMode === POOL_PRICING && allIn && stake > POOL_ALL_IN_LIMIT)
-      throw badRequest(`奖池盘口 ALL IN 最多 ${POOL_ALL_IN_LIMIT} 冠军币`);
 
     if (await isParticipant(market, userId)) throw forbidden('参赛选手不能投注本场比赛');
 

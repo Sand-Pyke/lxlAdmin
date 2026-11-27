@@ -827,8 +827,8 @@ model MatchMarket {
   returnRate     Float        @default(0.9)
   sigma          Float        @default(8)
   minStake       Int          @default(10)
-  maxStake       Int          @default(200)
-  perUserCap     Int          @default(200)
+  maxStake       Int          @default(500)
+  perUserCap     Int          @default(500)
   bettingOpenAt  DateTime?
   bettingCloseAt DateTime
   settledAt      DateTime?
